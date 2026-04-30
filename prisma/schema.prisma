@@ -1,0 +1,339 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BlockedSenderAction {
+  move_trash
+  move_spam
+  mark_newsletter
+  ignore
+}
+
+enum ContactCandidateStatus {
+  pending
+  exported
+  ignored
+  duplicate
+}
+
+enum AuditActor {
+  user
+  system
+  ai
+  rule
+}
+
+enum CloudProvider {
+  google_drive
+  onedrive
+}
+
+enum AttachmentSaveStatus {
+  not_saved
+  saved
+  error
+}
+
+enum MailDraftStatus {
+  draft
+  scheduled
+  sent
+  cancelled
+}
+
+model User {
+  id                 String               @id @default(cuid())
+  email              String               @unique
+  passwordHash       String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  mailAccounts       MailAccount[]
+  rules              MailRule[]
+  blocked            BlockedSender[]
+  automation         AutomationRun[]
+  automationSettings AutomationSettings[]
+  cloudAccounts      CloudAccount[]
+  drafts             MailDraft[]
+  auditLogs          AuditLog[]
+  aiSettings         AiSettings?
+  signatureSettings  SignatureSettings?
+}
+
+model SignatureSettings {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  signatureText         String   @default("")
+  includeOnNewMail      Boolean  @default(true)
+  includeOnReply        Boolean  @default(true)
+  includeOnForward      Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AiSettings {
+  id                       String   @id @default(cuid())
+  userId                   String   @unique
+  provider                 String   @default("mock")
+  encryptedOpenAiApiKey    String?
+  encryptedAnthropicApiKey String?
+  openAiApiKeySet          Boolean  @default(false)
+  anthropicApiKeySet       Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MailAccount {
+  id                    String       @id @default(cuid())
+  userId                String
+  name                  String
+  imapHost              String
+  imapPort              Int
+  imapSecure            Boolean      @default(true)
+  imapUsername          String
+  encryptedImapPassword String
+  smtpHost              String?
+  smtpPort              Int?
+  smtpSecure            Boolean      @default(true)
+  smtpUsername          String?
+  encryptedSmtpPassword String?
+  smtpFromName          String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folders               MailFolder[]
+  emails                EmailIndex[]
+  drafts                MailDraft[]
+  auditLogs             AuditLog[]
+}
+
+model MailDraft {
+  id         String          @id @default(cuid())
+  userId     String
+  accountId  String
+  status     MailDraftStatus @default(draft)
+  toEmails   String[]        @default([])
+  ccEmails   String[]        @default([])
+  bccEmails  String[]        @default([])
+  subject    String?
+  bodyHtml   String?
+  bodyText   String?
+  sendAt     DateTime?
+  sentAt     DateTime?
+  error      String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account    MailAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([accountId, status])
+}
+
+model MailFolder {
+  id           String      @id @default(cuid())
+  accountId    String
+  path         String
+  displayName  String
+  delimiter    String?
+  flags        Json?
+  existsCount  Int         @default(0)
+  unseenCount  Int         @default(0)
+  uidValidity  BigInt?
+  lastSeenUid  BigInt      @default(0)
+  lastSyncedAt DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  account      MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, path])
+}
+
+model EmailIndex {
+  id                  String             @id @default(cuid())
+  accountId           String
+  folderPath          String
+  imapUid             BigInt
+  messageId           String?
+  subject             String?
+  fromName            String?
+  fromEmail           String?
+  toEmails            String[]           @default([])
+  ccEmails            String[]           @default([])
+  date                DateTime?
+  snippet             String?
+  textPreview         String?
+  hasAttachments      Boolean            @default(false)
+  attachmentCount     Int                @default(0)
+  flags               String[]           @default([])
+  size                Int?
+  aiAnalyzed          Boolean            @default(false)
+  aiCategory          String?
+  aiPriority          String?
+  aiSummaryShort      String?
+  aiSummaryLong       String?
+  aiKeywords          String[]           @default([])
+  aiRecommendedFolder String?
+  aiRecommendedAction String?
+  aiConfidence        Float?
+  actionRequired      Boolean            @default(false)
+  // Body cache — populated lazily by `loadMessageBody` when the user opens
+  // a mail or the AI needs the content. NEVER returned in list endpoints.
+  bodyText            String?
+  bodyHtml            String?
+  bodyPlain           String?
+  bodyFetchedAt       DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  account             MailAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  attachments         EmailAttachment[]
+  contacts            ContactCandidate[]
+  auditLogs           AuditLog[]
+
+  @@unique([accountId, folderPath, imapUid])
+  @@index([accountId, folderPath])
+  @@index([accountId, subject])
+  @@index([accountId, fromEmail])
+  @@index([accountId, date])
+  @@index([accountId, aiCategory])
+  @@index([accountId, aiPriority])
+  @@index([accountId, hasAttachments])
+  @@index([accountId, actionRequired])
+}
+
+model EmailAttachment {
+  id         String  @id @default(cuid())
+  emailId    String
+  filename   String?
+  mimeType   String?
+  size       Int?
+  imapPartId String?
+
+  cloudProvider CloudProvider?
+  cloudPath     String?
+  cloudFileId   String?
+  savedAt       DateTime?
+  saveStatus    AttachmentSaveStatus @default(not_saved)
+  saveError     String?
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  email     EmailIndex @relation(fields: [emailId], references: [id], onDelete: Cascade)
+}
+
+model CloudAccount {
+  id                    String        @id @default(cuid())
+  userId                String
+  provider              CloudProvider
+  displayName           String?
+  encryptedAccessToken  String
+  encryptedRefreshToken String?
+  tokenExpiresAt        DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider])
+}
+
+model MailRule {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  active        Boolean  @default(true)
+  priority      Int      @default(100)
+  conditionJson Json
+  actionJson    Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BlockedSender {
+  id        String              @id @default(cuid())
+  userId    String
+  email     String?
+  domain    String?
+  action    BlockedSenderAction
+  note      String?
+  active    Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ContactCandidate {
+  id              String                 @id @default(cuid())
+  emailId         String
+  companyName     String?
+  personName      String?
+  email           String?
+  phone           String?
+  address         String?
+  confidence      Float?
+  status          ContactCandidateStatus @default(pending)
+  googleContactId String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  emailIndex      EmailIndex             @relation(fields: [emailId], references: [id], onDelete: Cascade)
+}
+
+model AutomationRun {
+  id         String    @id @default(cuid())
+  userId     String
+  type       String
+  status     String
+  startedAt  DateTime
+  finishedAt DateTime?
+  resultJson Json?
+  error      String?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AutomationSettings {
+  id                      String   @id @default(cuid())
+  userId                  String
+  runOnAppStart           Boolean  @default(false)
+  runIntervalMinutes      Int      @default(30)
+  autoAnalyzeNewEmails    Boolean  @default(true)
+  autoApplyUserRules      Boolean  @default(true)
+  autoApplyAiSuggestions  Boolean  @default(false)
+  aiMinConfidenceForMove  Float    @default(0.9)
+  aiMinConfidenceForTrash Float    @default(0.98)
+  aiMinConfidenceForSpam  Float    @default(0.98)
+  autoSaveAttachments     Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+}
+
+model AuditLog {
+  id         String       @id @default(cuid())
+  userId     String?
+  accountId  String?
+  emailId    String?
+  action     String
+  actor      AuditActor
+  beforeJson Json?
+  afterJson  Json?
+  createdAt  DateTime     @default(now())
+  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  account    MailAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  email      EmailIndex?  @relation(fields: [emailId], references: [id], onDelete: SetNull)
+}

@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "EmailIndex" ALTER COLUMN "imapUid" SET DATA TYPE BIGINT;

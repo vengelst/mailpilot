@@ -1,0 +1,57 @@
+# MailPilot production stack
+#
+# Usage on the server:
+#   docker compose -f docker-compose.prod.yml --env-file .env.production build
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+#
+# DO NOT run `docker compose down -v` — that destroys the Postgres volume.
+# Migrations run via `deploy/server-deploy.sh` which calls
+# `npx prisma migrate deploy` inside the app container.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mailpilot-app:latest
+    container_name: mailpilot-app
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    # Bind to localhost only — Nginx proxies from outside to 127.0.0.1:5600.
+    ports:
+      - "127.0.0.1:5600:3000"
+    networks:
+      - mailpilot
+
+  db:
+    image: postgres:16
+    container_name: mailpilot-db
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - mailpilot_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # No ports exposed — DB only reachable via the internal docker network.
+    networks:
+      - mailpilot
+
+networks:
+  mailpilot:
+    driver: bridge
+
+volumes:
+  mailpilot_postgres_data:
+    name: mailpilot_postgres_data

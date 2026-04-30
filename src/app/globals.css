@@ -12,10 +12,20 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html.light {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+html.dark {
+  --background: #0b1220;
+  --foreground: #e5e7eb;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  html:not(.light):not(.dark) {
+    --background: #0b1220;
+    --foreground: #e5e7eb;
   }
 }
 
@@ -23,4 +33,79 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/*
+ * Dark-mode compatibility for existing fixed utility classes.
+ * Keeps current UI readable without refactoring every page.
+ */
+html.dark .bg-white,
+html.dark .bg-gray-50,
+html.dark .bg-gray-100 {
+  background-color: #111827 !important;
+}
+
+html.dark .text-black,
+html.dark .text-gray-900,
+html.dark .text-gray-800,
+html.dark .text-gray-700,
+html.dark .text-gray-600,
+html.dark .text-gray-500,
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #e5e7eb !important;
+}
+
+html.dark .border-gray-200,
+html.dark .border-gray-300 {
+  border-color: #374151 !important;
+}
+
+html.dark .hover\:bg-gray-100:hover {
+  background-color: #1f2937 !important;
+}
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+  color: #f9fafb !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #d1d5db !important;
+}
+
+html.dark .placeholder\:text-slate-500::placeholder,
+html.dark .placeholder\:text-gray-500::placeholder {
+  color: #d1d5db !important;
+}
+
+/* Indeterminate sync progress bar — shuttle the colored segment back and forth. */
+@keyframes mailpilot-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(150%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.mailpilot-progress-bar {
+  animation: mailpilot-progress 1.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mailpilot-progress-bar {
+    animation: none;
+    width: 100% !important;
+    opacity: 0.6;
+  }
 }
