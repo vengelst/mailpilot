@@ -115,6 +115,11 @@ fi
 chmod 600 "$APP_PATH/.env.production" || true
 
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env.production)
+DATABASE_URL_FROM_ENV="$(sed -n 's/^DATABASE_URL=//p' .env.production | head -n1 || true)"
+
+if [[ -z "$DATABASE_URL_FROM_ENV" ]]; then
+  fail "DATABASE_URL is missing in .env.production."
+fi
 
 # ---------- 4. Build images ----------
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
@@ -139,8 +144,12 @@ done
 # ---------- 6. Run migrations ----------
 if [[ "$SKIP_MIGRATE" -eq 0 ]]; then
   log "Applying Prisma migrations (prisma migrate deploy)"
-  "${COMPOSE[@]}" run --rm --no-deps app sh -lc '
+  "${COMPOSE[@]}" run --rm --no-deps -e "DATABASE_URL=$DATABASE_URL_FROM_ENV" app sh -lc '
     set -e
+    if [ -z "${DATABASE_URL:-}" ]; then
+      echo "ERROR: DATABASE_URL is not set inside app container." >&2
+      exit 2
+    fi
     if command -v prisma >/dev/null 2>&1; then
       prisma migrate deploy
     elif [ -x ./node_modules/.bin/prisma ]; then
