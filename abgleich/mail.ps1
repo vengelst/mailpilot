@@ -422,7 +422,11 @@ function Invoke-ServerDeploy {
         '; if [ ! -f ' + $qServerPath + '/deploy/server-deploy.sh ]; then ' +
         'if [ -d ' + $qServerPath + '/.git ]; then :; ' +
         'elif [ -z "$(ls -A ' + $qServerPath + ' 2>/dev/null)" ]; then git clone --branch ' + $qBranch + ' ' + $qRepoUrl + ' ' + $qServerPath + '; ' +
-        'else echo "ERROR: Zielpfad ist nicht leer und deploy/server-deploy.sh fehlt."; exit 1; fi; fi' +
+        'elif [ "' + $(if ($ForceServerReset) { "1" } else { "0" }) + '" = "1" ]; then ' +
+        'echo "WARN: Zielpfad ist nicht leer, wird wegen --force-reset bereinigt."; ' +
+        'find ' + $qServerPath + ' -mindepth 1 -maxdepth 1 -exec rm -rf {} +; ' +
+        'git clone --branch ' + $qBranch + ' ' + $qRepoUrl + ' ' + $qServerPath + '; ' +
+        'else echo "ERROR: Zielpfad ist nicht leer und deploy/server-deploy.sh fehlt. Erneut mit --force-reset ausfuehren."; exit 1; fi; fi' +
         '; chmod +x ' + $qServerPath + '/deploy/server-deploy.sh' +
         '; ' + $qServerPath + '/deploy/server-deploy.sh --repo-url ' + $qRepoUrl +
         ' --branch ' + $qBranch + ' --path ' + $qServerPath + ' ' + $flagString
