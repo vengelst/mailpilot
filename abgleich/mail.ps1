@@ -431,8 +431,8 @@ function Invoke-ServerDeploy {
         'if [ -f ' + $qServerPath + '/.env.production.example ]; then ' +
         'cp ' + $qServerPath + '/.env.production.example ' + $qServerPath + '/.env.production; ' +
         'chmod 600 ' + $qServerPath + '/.env.production; ' +
-        'echo "WARN: .env.production fehlte und wurde aus .env.production.example erstellt (bitte Werte pruefen)."; ' +
-        'else echo "ERROR: .env.production fehlt und kein .env.production.example vorhanden."; exit 1; fi; fi' +
+        'printf "%s\n" "WARN: .env.production fehlte und wurde aus .env.production.example erstellt (bitte Werte pruefen)."; ' +
+        'else printf "%s\n" "ERROR: .env.production fehlt und kein .env.production.example vorhanden."; exit 1; fi; fi' +
         '; chmod +x ' + $qServerPath + '/deploy/server-deploy.sh' +
         '; ' + $qServerPath + '/deploy/server-deploy.sh --repo-url ' + $qRepoUrl +
         ' --branch ' + $qBranch + ' --path ' + $qServerPath + ' ' + $flagString
