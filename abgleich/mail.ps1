@@ -57,6 +57,10 @@ function Get-DefaultDeployConfig {
         serverHost = "mailpilot.vivahome.de"
         serverUser = "root"
         serverPath = "/opt/mailpilot"
+        nginxConfigLocalPath = "deploy/nginx/mailpilot.vivahome.de.conf"
+        nginxConfigName = "mailpilot.vivahome.de.conf"
+        nginxSitesAvailablePath = "/etc/nginx/sites-available"
+        nginxSitesEnabledPath = "/etc/nginx/sites-enabled"
         forceServerReset = $true
     }
 }
@@ -77,6 +81,10 @@ function Save-DeployConfig([string]$path, [hashtable]$config) {
         "    serverHost = $(Convert-ToPsLiteral $config.serverHost)"
         "    serverUser = $(Convert-ToPsLiteral $config.serverUser)"
         "    serverPath = $(Convert-ToPsLiteral $config.serverPath)"
+        "    nginxConfigLocalPath = $(Convert-ToPsLiteral $config.nginxConfigLocalPath)"
+        "    nginxConfigName = $(Convert-ToPsLiteral $config.nginxConfigName)"
+        "    nginxSitesAvailablePath = $(Convert-ToPsLiteral $config.nginxSitesAvailablePath)"
+        "    nginxSitesEnabledPath = $(Convert-ToPsLiteral $config.nginxSitesEnabledPath)"
         "    forceServerReset = $(Convert-ToPsLiteral $config.forceServerReset)"
         "}"
     )
@@ -123,6 +131,10 @@ function Show-DeployConfig([hashtable]$config) {
     Write-Info "Server host: $($config.serverHost)"
     Write-Info "Server user: $($config.serverUser)"
     Write-Info "Server path: $($config.serverPath)"
+    Write-Info "Nginx local config: $($config.nginxConfigLocalPath)"
+    Write-Info "Nginx config name: $($config.nginxConfigName)"
+    Write-Info "Nginx sites-available: $($config.nginxSitesAvailablePath)"
+    Write-Info "Nginx sites-enabled: $($config.nginxSitesEnabledPath)"
     Write-Info "Force server reset: $($config.forceServerReset)"
 }
 
@@ -139,10 +151,18 @@ function Edit-DeployConfig([hashtable]$configPathAndConfig) {
     $updated.serverHost = Ask-Text "Server host" ([string]$config["serverHost"])
     $updated.serverUser = Ask-Text "Server user" ([string]$config["serverUser"])
     $updated.serverPath = Ask-Text "Server path" ([string]$config["serverPath"])
+    $updated.nginxConfigLocalPath = Ask-Text "Nginx local config path" ([string]$config["nginxConfigLocalPath"])
+    $updated.nginxConfigName = Ask-Text "Nginx config file name" ([string]$config["nginxConfigName"])
+    $updated.nginxSitesAvailablePath = Ask-Text "Nginx sites-available path" ([string]$config["nginxSitesAvailablePath"])
+    $updated.nginxSitesEnabledPath = Ask-Text "Nginx sites-enabled path" ([string]$config["nginxSitesEnabledPath"])
     $updated.forceServerReset = Ask-YesNo "Server bei lokalen Aenderungen hart zuruecksetzen?" ([bool]$config["forceServerReset"])
 
     if (-not $updated.repoUrl) { Fail "Repo URL ist erforderlich." }
     if (-not $updated.remoteName) { Fail "Git-Remote-Name ist fuer Push/Tag erforderlich." }
+    if (-not $updated.nginxConfigLocalPath) { Fail "Nginx local config path ist erforderlich." }
+    if (-not $updated.nginxConfigName) { Fail "Nginx config file name ist erforderlich." }
+    if (-not $updated.nginxSitesAvailablePath) { Fail "Nginx sites-available path ist erforderlich." }
+    if (-not $updated.nginxSitesEnabledPath) { Fail "Nginx sites-enabled path ist erforderlich." }
 
     $changed =
         ([string]$updated.remoteName -ne [string]$config["remoteName"]) -or
@@ -151,6 +171,10 @@ function Edit-DeployConfig([hashtable]$configPathAndConfig) {
         ([string]$updated.serverHost -ne [string]$config["serverHost"]) -or
         ([string]$updated.serverUser -ne [string]$config["serverUser"]) -or
         ([string]$updated.serverPath -ne [string]$config["serverPath"]) -or
+        ([string]$updated.nginxConfigLocalPath -ne [string]$config["nginxConfigLocalPath"]) -or
+        ([string]$updated.nginxConfigName -ne [string]$config["nginxConfigName"]) -or
+        ([string]$updated.nginxSitesAvailablePath -ne [string]$config["nginxSitesAvailablePath"]) -or
+        ([string]$updated.nginxSitesEnabledPath -ne [string]$config["nginxSitesEnabledPath"]) -or
         ([bool]$updated.forceServerReset -ne [bool]$config["forceServerReset"])
 
     if (-not $changed) {
@@ -347,6 +371,34 @@ function Handle-PushAndVersion([string]$branch, [string]$remoteName, [string]$re
     }
 }
 
+function Create-LocalDbDumpFile {
+    $dumpDir = Join-Path $PSScriptRoot "dumps"
+    if (-not (Test-Path $dumpDir)) {
+        New-Item -Path $dumpDir -ItemType Directory | Out-Null
+    }
+
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $dumpFile = Join-Path $dumpDir ("mailpilot_{0}.sql" -f $timestamp)
+    $remoteTmpFile = "/tmp/mailpilot_export.sql"
+
+    Write-Step "Lokalen SQL-Dump erstellen"
+    Invoke-Checked "docker compose up -d postgres" {
+        docker compose up -d postgres
+    }
+    Invoke-Checked "pg_dump in Container ausfuehren" {
+        docker compose exec -T postgres sh -lc "pg_dump -U `"`$POSTGRES_USER`" -d `"`$POSTGRES_DB`" --clean --if-exists -f $remoteTmpFile"
+    }
+    Invoke-Checked "Dump vom Container kopieren -> $dumpFile" {
+        docker compose cp "postgres:$remoteTmpFile" $dumpFile
+    }
+    Invoke-Checked "Temporäre Dump-Datei im Container entfernen" {
+        docker compose exec -T postgres sh -lc "rm -f $remoteTmpFile"
+    }
+
+    Write-Ok "SQL-Dump erstellt: $dumpFile"
+    return $dumpFile
+}
+
 function Invoke-ServerDeploy {
     param(
         [string]$ServerHost,
@@ -378,6 +430,67 @@ function Invoke-ServerDeploy {
     }
 }
 
+function Install-NginxConfig {
+    param(
+        [string]$ServerHost,
+        [string]$ServerUser,
+        [string]$ServerPath,
+        [string]$NginxConfigLocalPath,
+        [string]$NginxConfigName,
+        [string]$NginxSitesAvailablePath,
+        [string]$NginxSitesEnabledPath
+    )
+    $localConfig = Join-Path $repoRoot $NginxConfigLocalPath
+    if (-not (Test-Path $localConfig)) { Fail "Nginx-Config nicht gefunden: $localConfig" }
+
+    $sshTarget = "$ServerUser@$ServerHost"
+    $remoteStagingDir = "$ServerPath/deploy/nginx"
+    $remoteStagingFile = "$remoteStagingDir/$NginxConfigName"
+    $remoteAvailableFile = "$NginxSitesAvailablePath/$NginxConfigName"
+    $remoteEnabledFile = "$NginxSitesEnabledPath/$NginxConfigName"
+
+    Write-Step "Nginx-Config auf Server kopieren"
+    Invoke-Checked "ssh $sshTarget (nginx staging dir)" {
+        ssh -o StrictHostKeyChecking=accept-new $sshTarget "mkdir -p $remoteStagingDir"
+    }
+    Invoke-Checked "scp $localConfig -> ${sshTarget}:$remoteStagingFile" {
+        scp -o StrictHostKeyChecking=accept-new $localConfig "${sshTarget}:$remoteStagingFile"
+    }
+
+    $qRemoteStagingFile = Quote-Bash $remoteStagingFile
+    $qRemoteAvailableFile = Quote-Bash $remoteAvailableFile
+    $qRemoteEnabledFile = Quote-Bash $remoteEnabledFile
+    $nginxCmd = 'set -e; ' +
+        'sudo cp ' + $qRemoteStagingFile + ' ' + $qRemoteAvailableFile +
+        '; sudo ln -sfn ' + $qRemoteAvailableFile + ' ' + $qRemoteEnabledFile +
+        '; sudo nginx -t' +
+        '; sudo systemctl reload nginx'
+    $remoteExec = "bash -lc " + (Quote-Bash $nginxCmd)
+
+    Write-Step "Nginx-Config aktivieren"
+    Invoke-Checked "ssh $sshTarget (nginx install)" {
+        ssh -o StrictHostKeyChecking=accept-new $sshTarget $remoteExec
+    }
+}
+
+function Restart-ServerApp {
+    param(
+        [string]$ServerHost,
+        [string]$ServerUser,
+        [string]$ServerPath
+    )
+    $sshTarget = "$ServerUser@$ServerHost"
+    $qServerPath = Quote-Bash $ServerPath
+    $restartCmd = 'set -e; cd ' + $qServerPath +
+        '; docker compose -f docker-compose.prod.yml --env-file .env.production up -d app'
+    $remoteExec = "bash -lc " + (Quote-Bash $restartCmd)
+
+    Write-Step "App auf Server neu starten"
+    Invoke-Checked "ssh $sshTarget (app restart)" {
+        ssh -o StrictHostKeyChecking=accept-new $sshTarget $remoteExec
+    }
+}
+
 function Copy-And-Import-DbFile {
     param(
         [string]$ServerHost,
@@ -392,7 +505,7 @@ function Copy-And-Import-DbFile {
     $qServerPath = Quote-Bash $ServerPath
     $qRemoteFile = Quote-Bash $remoteFile
 
-    Write-Step "DB-Datei auf Server kopieren"
+    Write-Step "Schritt 5/7: SQL auf Server kopieren"
     Invoke-Checked "scp $LocalDbFile -> ${sshTarget}:$remoteFile" {
         scp -o StrictHostKeyChecking=accept-new $LocalDbFile "${sshTarget}:$remoteFile"
     }
@@ -404,7 +517,7 @@ function Copy-And-Import-DbFile {
         ' < ' + $qRemoteFile
     $remoteExec = "bash -lc " + (Quote-Bash $importCmd)
 
-    Write-Step "DB-Datei auf Server importieren"
+    Write-Step "Schritt 6/7: SQL auf Server einspielen"
     Invoke-Checked "ssh $sshTarget (db import)" {
         ssh -o StrictHostKeyChecking=accept-new $sshTarget $remoteExec
     }
@@ -423,6 +536,10 @@ $repoUrl = [string]$cfg["repoUrl"]
 $serverHost = [string]$cfg["serverHost"]
 $serverUser = [string]$cfg["serverUser"]
 $serverPath = [string]$cfg["serverPath"]
+$nginxConfigLocalPath = [string]$cfg["nginxConfigLocalPath"]
+$nginxConfigName = [string]$cfg["nginxConfigName"]
+$nginxSitesAvailablePath = [string]$cfg["nginxSitesAvailablePath"]
+$nginxSitesEnabledPath = [string]$cfg["nginxSitesEnabledPath"]
 $forceServerReset = [bool]$cfg["forceServerReset"]
 
 if (-not $repoUrl) { Fail "Repo URL ist erforderlich." }
@@ -434,7 +551,7 @@ while ($true) {
     Write-Step "MailPilot interactive menu"
     Write-Host "  1) App pruefen + Push/Version" -ForegroundColor Gray
     Write-Host "  2) Nur App auf Server deployen" -ForegroundColor Gray
-    Write-Host "  3) App deployen + DB-Datei auf Server kopieren/importieren" -ForegroundColor Gray
+    Write-Host "  3) SQL erzeugen + Push + Deploy + SQL copy/import + App restart" -ForegroundColor Gray
     Write-Host "  4) Deploy-Konfiguration anzeigen/aendern" -ForegroundColor Gray
     Write-Host "  5) Beenden" -ForegroundColor Gray
     $choice = Ask-Text "Auswahl" "5"
@@ -447,13 +564,26 @@ while ($true) {
         "2" {
             Invoke-ServerDeploy -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
                 -RepoUrl $repoUrl -Branch $branch -ForceServerReset:$forceServerReset -SkipMigrate:$true
+            Install-NginxConfig -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
+                -NginxConfigLocalPath $nginxConfigLocalPath -NginxConfigName $nginxConfigName `
+                -NginxSitesAvailablePath $nginxSitesAvailablePath -NginxSitesEnabledPath $nginxSitesEnabledPath
         }
         "3" {
-            $dbFile = Ask-Text "Lokaler Pfad zur DB-SQL-Datei"
-            if (-not $dbFile) { Fail "Pfad zur DB-Datei ist erforderlich." }
+            Write-Step "Schritt 1/7: SQL lokal erzeugen"
+            $dbFile = Create-LocalDbDumpFile
+            Write-Step "Schritt 2/7: App nach GitHub (Commit/Push)"
+            Handle-PushAndVersion -branch $branch -remoteName $remoteName -repoUrl $repoUrl
+            Write-Step "Schritt 3/7: App auf Server deployen"
             Invoke-ServerDeploy -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
                 -RepoUrl $repoUrl -Branch $branch -ForceServerReset:$forceServerReset -SkipMigrate:$false
+            Write-Step "Schritt 4/7: Nginx auf Server aktualisieren"
+            Install-NginxConfig -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
+                -NginxConfigLocalPath $nginxConfigLocalPath -NginxConfigName $nginxConfigName `
+                -NginxSitesAvailablePath $nginxSitesAvailablePath -NginxSitesEnabledPath $nginxSitesEnabledPath
             Copy-And-Import-DbFile -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath -LocalDbFile $dbFile
+            Write-Step "Schritt 7/7: App auf Server neu starten"
+            Restart-ServerApp -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath
+            Write-Ok "Punkt 3 abgeschlossen (alle 7 Schritte erfolgreich)."
         }
         "4" {
             $cfg = Edit-DeployConfig -configPathAndConfig @{ path = $configPath; config = $cfg }
@@ -463,6 +593,10 @@ while ($true) {
             $serverHost = [string]$cfg["serverHost"]
             $serverUser = [string]$cfg["serverUser"]
             $serverPath = [string]$cfg["serverPath"]
+            $nginxConfigLocalPath = [string]$cfg["nginxConfigLocalPath"]
+            $nginxConfigName = [string]$cfg["nginxConfigName"]
+            $nginxSitesAvailablePath = [string]$cfg["nginxSitesAvailablePath"]
+            $nginxSitesEnabledPath = [string]$cfg["nginxSitesEnabledPath"]
             $forceServerReset = [bool]$cfg["forceServerReset"]
             Show-DeployConfig -config $cfg
         }
