@@ -423,7 +423,7 @@ function Invoke-ServerDeploy {
         'if [ -d ' + $qServerPath + '/.git ]; then :; ' +
         'elif [ -z "$(ls -A ' + $qServerPath + ' 2>/dev/null)" ]; then git clone --branch ' + $qBranch + ' ' + $qRepoUrl + ' ' + $qServerPath + '; ' +
         'elif [ "' + $(if ($ForceServerReset) { "1" } else { "0" }) + '" = "1" ]; then ' +
-        'echo "WARN: Zielpfad ist nicht leer, wird wegen --force-reset bereinigt."; ' +
+        'echo "WARN: Zielpfad nicht leer, bereinige wegen --force-reset."; ' +
         'find ' + $qServerPath + ' -mindepth 1 -maxdepth 1 -exec rm -rf {} +; ' +
         'git clone --branch ' + $qBranch + ' ' + $qRepoUrl + ' ' + $qServerPath + '; ' +
         'else echo "ERROR: Zielpfad ist nicht leer und deploy/server-deploy.sh fehlt. Erneut mit --force-reset ausfuehren."; exit 1; fi; fi' +
@@ -431,8 +431,8 @@ function Invoke-ServerDeploy {
         'if [ -f ' + $qServerPath + '/.env.production.example ]; then ' +
         'cp ' + $qServerPath + '/.env.production.example ' + $qServerPath + '/.env.production; ' +
         'chmod 600 ' + $qServerPath + '/.env.production; ' +
-        'printf "%s\n" "WARN: .env.production fehlte und wurde aus .env.production.example erstellt (bitte Werte pruefen)."; ' +
-        'else printf "%s\n" "ERROR: .env.production fehlt und kein .env.production.example vorhanden."; exit 1; fi; fi' +
+        'echo "WARN: .env.production wurde aus .env.production.example erstellt. Bitte Werte pruefen."; ' +
+        'else echo "ERROR: .env.production fehlt und kein .env.production.example vorhanden."; exit 1; fi; fi' +
         '; chmod +x ' + $qServerPath + '/deploy/server-deploy.sh' +
         '; ' + $qServerPath + '/deploy/server-deploy.sh --repo-url ' + $qRepoUrl +
         ' --branch ' + $qBranch + ' --path ' + $qServerPath + ' ' + $flagString
