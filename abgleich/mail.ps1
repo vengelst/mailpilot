@@ -525,12 +525,11 @@ function Copy-And-Import-DbFile {
     }
 
     $importCmd = 'set -e; cd ' + $qServerPath +
-        '; DB_USER="$(sed -n "s/^POSTGRES_USER=//p" .env.production | head -n1)"' +
-        '; DB_NAME="$(sed -n "s/^POSTGRES_DB=//p" .env.production | head -n1)"' +
+        '; DB_USER="$(sed -n "s/^POSTGRES_USER=//p" .env.production | head -n1 | tr -d "\r")"' +
+        '; DB_NAME="$(sed -n "s/^POSTGRES_DB=//p" .env.production | head -n1 | tr -d "\r")"' +
         '; if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then echo "ERROR: POSTGRES_USER/POSTGRES_DB fehlen in .env.production"; exit 2; fi' +
         '; docker compose -f docker-compose.prod.yml --env-file .env.production up -d db' +
-        '; docker compose -f docker-compose.prod.yml --env-file .env.production exec -T db sh -lc ' +
-        (Quote-Bash 'psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME"') +
+        '; docker compose -f docker-compose.prod.yml --env-file .env.production exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME"' +
         ' < ' + $qRemoteFile
     $remoteExec = "bash -lc " + (Quote-Bash $importCmd)
 
