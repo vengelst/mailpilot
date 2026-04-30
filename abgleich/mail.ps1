@@ -418,7 +418,11 @@ function Invoke-ServerDeploy {
     if ($SkipMigrate) { $flags += "--skip-migrate" }
     $flagString = ($flags -join " ")
 
-    $remoteCmd = 'set -e; cd ' + $qServerPath +
+    $remoteCmd = 'set -e; mkdir -p ' + $qServerPath +
+        '; if [ ! -f ' + $qServerPath + '/deploy/server-deploy.sh ]; then ' +
+        'if [ -d ' + $qServerPath + '/.git ]; then :; ' +
+        'elif [ -z "$(ls -A ' + $qServerPath + ' 2>/dev/null)" ]; then git clone --branch ' + $qBranch + ' ' + $qRepoUrl + ' ' + $qServerPath + '; ' +
+        'else echo "ERROR: Zielpfad ist nicht leer und deploy/server-deploy.sh fehlt."; exit 1; fi; fi' +
         '; chmod +x ' + $qServerPath + '/deploy/server-deploy.sh' +
         '; ' + $qServerPath + '/deploy/server-deploy.sh --repo-url ' + $qRepoUrl +
         ' --branch ' + $qBranch + ' --path ' + $qServerPath + ' ' + $flagString
