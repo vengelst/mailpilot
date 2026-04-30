@@ -139,7 +139,19 @@ done
 # ---------- 6. Run migrations ----------
 if [[ "$SKIP_MIGRATE" -eq 0 ]]; then
   log "Applying Prisma migrations (prisma migrate deploy)"
-  "${COMPOSE[@]}" run --rm --no-deps app npx prisma migrate deploy
+  "${COMPOSE[@]}" run --rm --no-deps app sh -lc '
+    set -e
+    if command -v prisma >/dev/null 2>&1; then
+      prisma migrate deploy
+    elif [ -x ./node_modules/.bin/prisma ]; then
+      ./node_modules/.bin/prisma migrate deploy
+    elif [ -f ./node_modules/prisma/build/index.js ]; then
+      node ./node_modules/prisma/build/index.js migrate deploy
+    else
+      echo "ERROR: Prisma CLI not found in app container." >&2
+      exit 127
+    fi
+  '
 else
   log "Skipping migrations (--skip-migrate)"
 fi
