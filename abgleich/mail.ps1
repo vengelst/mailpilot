@@ -131,19 +131,32 @@ function Edit-DeployConfig([hashtable]$configPathAndConfig) {
     $config = [hashtable]$configPathAndConfig.config
 
     Show-DeployConfig -config $config
-    if (-not (Ask-YesNo "Konfiguration aendern und speichern?" $true)) { return $config }
 
     $updated = @{}
-    $updated.remoteName = Ask-Text "Git remote name" [string]$config.remoteName
-    $updated.branch = Ask-Text "Git branch" [string]$config.branch
-    $updated.repoUrl = Ask-Text "Repo URL" [string]$config.repoUrl
-    $updated.serverHost = Ask-Text "Server host" [string]$config.serverHost
-    $updated.serverUser = Ask-Text "Server user" [string]$config.serverUser
-    $updated.serverPath = Ask-Text "Server path" [string]$config.serverPath
-    $updated.forceServerReset = Ask-YesNo "Server bei lokalen Aenderungen hart zuruecksetzen?" [bool]$config.forceServerReset
+    $updated.remoteName = Ask-Text "Git remote name" ([string]$config["remoteName"])
+    $updated.branch = Ask-Text "Git branch" ([string]$config["branch"])
+    $updated.repoUrl = Ask-Text "Repo URL" ([string]$config["repoUrl"])
+    $updated.serverHost = Ask-Text "Server host" ([string]$config["serverHost"])
+    $updated.serverUser = Ask-Text "Server user" ([string]$config["serverUser"])
+    $updated.serverPath = Ask-Text "Server path" ([string]$config["serverPath"])
+    $updated.forceServerReset = Ask-YesNo "Server bei lokalen Aenderungen hart zuruecksetzen?" ([bool]$config["forceServerReset"])
 
     if (-not $updated.repoUrl) { Fail "Repo URL ist erforderlich." }
     if (-not $updated.remoteName) { Fail "Git-Remote-Name ist fuer Push/Tag erforderlich." }
+
+    $changed =
+        ([string]$updated.remoteName -ne [string]$config["remoteName"]) -or
+        ([string]$updated.branch -ne [string]$config["branch"]) -or
+        ([string]$updated.repoUrl -ne [string]$config["repoUrl"]) -or
+        ([string]$updated.serverHost -ne [string]$config["serverHost"]) -or
+        ([string]$updated.serverUser -ne [string]$config["serverUser"]) -or
+        ([string]$updated.serverPath -ne [string]$config["serverPath"]) -or
+        ([bool]$updated.forceServerReset -ne [bool]$config["forceServerReset"])
+
+    if (-not $changed) {
+        Write-Info "Keine Aenderungen an der Konfiguration."
+        return $config
+    }
 
     Save-DeployConfig -path $path -config $updated
     Write-Ok "Konfiguration gespeichert: $path"
@@ -157,6 +170,52 @@ function Ensure-NoTrackedSecrets {
         $tracked = (& git ls-files --cached -- $f 2>$null)
         if ($tracked) { Fail "Abbruch: '$f' ist in Git getrackt." }
     }
+}
+
+function Get-GitRemoteFetchMap {
+    $map = @{}
+    $lines = (& git remote -v 2>$null)
+    foreach ($line in $lines) {
+        $parts = $line -split "\s+"
+        if ($parts.Length -lt 3) { continue }
+        $name = $parts[0].Trim()
+        $url = $parts[1].Trim()
+        $kind = $parts[2].Trim()
+        if (-not $name -or -not $url) { continue }
+        if ($kind -eq "(fetch)" -or -not $map.ContainsKey($name)) {
+            $map[$name] = $url
+        }
+    }
+    return $map
+}
+
+function Ensure-UsableGitRemote([string]$remoteName, [string]$repoUrl) {
+    if (-not $remoteName) { Fail "Git-Remote-Name ist leer." }
+
+    $remoteMap = Get-GitRemoteFetchMap
+    if ($remoteMap.ContainsKey($remoteName)) {
+        return $remoteName
+    }
+
+    if ($repoUrl) {
+        foreach ($existingName in $remoteMap.Keys) {
+            if ([string]$remoteMap[$existingName] -eq $repoUrl) {
+                Write-Warn2 "Remote '$remoteName' existiert nicht. Verwende vorhandenes Remote '$existingName' mit gleicher URL."
+                return $existingName
+            }
+        }
+    }
+
+    if (-not $repoUrl) {
+        Fail "Remote '$remoteName' existiert nicht und Repo URL ist leer."
+    }
+
+    Write-Warn2 "Remote '$remoteName' existiert nicht."
+    if (-not (Ask-YesNo "Remote '$remoteName' mit Repo URL '$repoUrl' anlegen?" $false)) {
+        Fail "Abbruch: Remote '$remoteName' wurde nicht angelegt."
+    }
+    Invoke-Checked "git remote add $remoteName $repoUrl" { git remote add $remoteName $repoUrl }
+    return $remoteName
 }
 
 function Get-GitState {
@@ -242,8 +301,9 @@ function Run-LocalChecks {
     Invoke-Checked "npm run build" { npm run build }
 }
 
-function Handle-PushAndVersion([string]$branch, [string]$remoteName) {
+function Handle-PushAndVersion([string]$branch, [string]$remoteName, [string]$repoUrl) {
     Ensure-NoTrackedSecrets
+    $resolvedRemote = Ensure-UsableGitRemote -remoteName $remoteName -repoUrl $repoUrl
     $state = Get-GitState
     Write-Step "Git Workflow"
     if ($state.Dirty) {
@@ -271,8 +331,8 @@ function Handle-PushAndVersion([string]$branch, [string]$remoteName) {
         return
     }
 
-    if ($state.Ahead -gt 0 -or (Ask-YesNo "Current branch to $remoteName/$branch pushen?" $true)) {
-        Invoke-Checked "git push $remoteName $branch" { git push $remoteName $branch }
+    if ($state.Ahead -gt 0 -or (Ask-YesNo "Current branch to $resolvedRemote/$branch pushen?" $true)) {
+        Invoke-Checked "git push $resolvedRemote $branch" { git push $resolvedRemote $branch }
     } else {
         Write-Warn2 "Push uebersprungen."
     }
@@ -281,8 +341,8 @@ function Handle-PushAndVersion([string]$branch, [string]$remoteName) {
         $tag = Ask-Text "Tag-Name (z.B. v1.4.0)"
         if (-not $tag) { Fail "Tag-Name ist erforderlich." }
         Invoke-Checked "git tag $tag" { git tag $tag }
-        if (Ask-YesNo "Tag nach $remoteName pushen?" $true) {
-            Invoke-Checked "git push $remoteName $tag" { git push $remoteName $tag }
+        if (Ask-YesNo "Tag nach $resolvedRemote pushen?" $true) {
+            Invoke-Checked "git push $resolvedRemote $tag" { git push $resolvedRemote $tag }
         }
     }
 }
@@ -357,13 +417,13 @@ Set-Location $repoRoot
 
 $configPath = Join-Path $PSScriptRoot "mail.config.ps1"
 $cfg = Load-DeployConfig -path $configPath
-$remoteName = [string]$cfg.remoteName
-$branch = [string]$cfg.branch
-$repoUrl = [string]$cfg.repoUrl
-$serverHost = [string]$cfg.serverHost
-$serverUser = [string]$cfg.serverUser
-$serverPath = [string]$cfg.serverPath
-$forceServerReset = [bool]$cfg.forceServerReset
+$remoteName = [string]$cfg["remoteName"]
+$branch = [string]$cfg["branch"]
+$repoUrl = [string]$cfg["repoUrl"]
+$serverHost = [string]$cfg["serverHost"]
+$serverUser = [string]$cfg["serverUser"]
+$serverPath = [string]$cfg["serverPath"]
+$forceServerReset = [bool]$cfg["forceServerReset"]
 
 if (-not $repoUrl) { Fail "Repo URL ist erforderlich." }
 if (-not $remoteName) { Fail "Git-Remote-Name ist fuer Push/Tag erforderlich." }
@@ -382,7 +442,7 @@ while ($true) {
     switch ($choice) {
         "1" {
             Run-LocalChecks
-            Handle-PushAndVersion -branch $branch -remoteName $remoteName
+            Handle-PushAndVersion -branch $branch -remoteName $remoteName -repoUrl $repoUrl
         }
         "2" {
             Invoke-ServerDeploy -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
@@ -397,13 +457,13 @@ while ($true) {
         }
         "4" {
             $cfg = Edit-DeployConfig -configPathAndConfig @{ path = $configPath; config = $cfg }
-            $remoteName = [string]$cfg.remoteName
-            $branch = [string]$cfg.branch
-            $repoUrl = [string]$cfg.repoUrl
-            $serverHost = [string]$cfg.serverHost
-            $serverUser = [string]$cfg.serverUser
-            $serverPath = [string]$cfg.serverPath
-            $forceServerReset = [bool]$cfg.forceServerReset
+            $remoteName = [string]$cfg["remoteName"]
+            $branch = [string]$cfg["branch"]
+            $repoUrl = [string]$cfg["repoUrl"]
+            $serverHost = [string]$cfg["serverHost"]
+            $serverUser = [string]$cfg["serverUser"]
+            $serverPath = [string]$cfg["serverPath"]
+            $forceServerReset = [bool]$cfg["forceServerReset"]
             Show-DeployConfig -config $cfg
         }
         "5" { break }
