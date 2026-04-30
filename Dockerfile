@@ -42,9 +42,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Prisma artifacts needed for `prisma migrate deploy` at runtime
+# Prisma CLI + full dependency tree needed for `prisma migrate deploy` at runtime.
+# We copy full node_modules from deps so transitive Prisma CLI deps (e.g. `effect`)
+# are present in the runner image.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+
+# Prisma artifacts needed by the app/migrations.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 
