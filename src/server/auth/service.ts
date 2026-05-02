@@ -9,13 +9,21 @@ export async function requireUser() {
   return prisma.user.findUnique({ where: { id: session.userId } });
 }
 
+export async function requireAdminUser() {
+  const user = await requireUser();
+  if (!user || user.role !== "administrator") return null;
+  return user;
+}
+
 export async function ensureLocalUser(email: string, password: string) {
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return existing;
+  const usersCount = await prisma.user.count();
   return prisma.user.create({
     data: {
       email,
       passwordHash: await hashPassword(password),
+      role: usersCount === 0 ? "administrator" : "user",
     },
   });
 }

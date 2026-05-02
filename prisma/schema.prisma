@@ -50,10 +50,16 @@ enum MailDraftStatus {
   cancelled
 }
 
+enum UserRole {
+  administrator
+  user
+}
+
 model User {
   id                 String               @id @default(cuid())
   email              String               @unique
   passwordHash       String
+  role               UserRole             @default(user)
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   mailAccounts       MailAccount[]

@@ -28,6 +28,11 @@ const sections = [
     description: "Standardsignatur pflegen und Einfüge-Regeln setzen.",
   },
   {
+    href: "/settings/users",
+    title: "Benutzer",
+    description: "Anmeldungen, Rollen und Passwörter verwalten.",
+  },
+  {
     href: "/rules",
     title: "Regeln",
     description: "Eigene Regeln für automatische Sortierung.",
