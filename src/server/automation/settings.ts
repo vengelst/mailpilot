@@ -1,4 +1,5 @@
 import { prisma } from "@/server/db/prisma";
+import { snapMailScrollBatchSize } from "@/lib/mailScrollBatch";
 
 type SettingsPatch = Partial<{
   runOnAppStart: boolean;
@@ -10,6 +11,7 @@ type SettingsPatch = Partial<{
   aiMinConfidenceForTrash: number;
   aiMinConfidenceForSpam: number;
   autoSaveAttachments: boolean;
+  mailScrollBatchSize: number;
 }>;
 
 export type AutomationSettingsRecord = {
@@ -24,6 +26,7 @@ export type AutomationSettingsRecord = {
   aiMinConfidenceForTrash: number;
   aiMinConfidenceForSpam: number;
   autoSaveAttachments: boolean;
+  mailScrollBatchSize: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -51,6 +54,10 @@ export async function updateAutomationSettings(
   patch: SettingsPatch,
 ): Promise<AutomationSettingsRecord> {
   await getOrCreateAutomationSettings(userId);
+  const data: Record<string, unknown> = { ...patch };
+  if (patch.mailScrollBatchSize !== undefined) {
+    data.mailScrollBatchSize = snapMailScrollBatchSize(patch.mailScrollBatchSize);
+  }
   const prismaAny = prisma as unknown as {
     automationSettings: {
       update: (args: unknown) => Promise<unknown>;
@@ -58,6 +65,6 @@ export async function updateAutomationSettings(
   };
   return (await prismaAny.automationSettings.update({
     where: { userId },
-    data: patch,
+    data,
   })) as AutomationSettingsRecord;
 }

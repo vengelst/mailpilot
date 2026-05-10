@@ -11,6 +11,11 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { buildSafeMailDocument } from "@/lib/sanitizeMailHtml";
+import {
+  DEFAULT_MAIL_SCROLL_BATCH,
+  snapMailScrollBatchSize,
+  type MailScrollBatchOption,
+} from "@/lib/mailScrollBatch";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // ---- Drei-Spalten-Layout: Drag-Handle zwischen den Spalten ----
@@ -450,6 +455,8 @@ export function MailWorkspace() {
   const [uiError, setUiError] = useState("");
   const [uiInfo, setUiInfo] = useState("");
   const [isLoadingEmails, setIsLoadingEmails] = useState(false);
+  const [isLoadingMoreEmails, setIsLoadingMoreEmails] = useState(false);
+  const [emailsHasMore, setEmailsHasMore] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<
@@ -488,6 +495,8 @@ export function MailWorkspace() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showSyncMenu, setShowSyncMenu] = useState(false);
   const [newMailCheckIntervalMinutes, setNewMailCheckIntervalMinutes] = useState(30);
+  const [mailScrollBatchSize, setMailScrollBatchSize] =
+    useState<MailScrollBatchOption>(DEFAULT_MAIL_SCROLL_BATCH);
   const [mailContextMenu, setMailContextMenu] = useState<MailContextMenuState | null>(null);
   const [contextMoveTargetFolder, setContextMoveTargetFolder] = useState("");
   const [contextAttachmentId, setContextAttachmentId] = useState("");
@@ -512,6 +521,13 @@ export function MailWorkspace() {
     sendAtLocal: "",
   });
   const autoCheckInFlightRef = useRef(false);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreInFlightRef = useRef(false);
+  const loadMoreEmailsRef = useRef<() => Promise<void>>(async () => {});
+  const emailsNextCursorRef = useRef<string | null>(null);
+  const emailsHasMoreRef = useRef(false);
+  const isLoadingEmailsRef = useRef(false);
 
   // Three-column resizable layout (only takes effect on lg+; mobile keeps the
   // existing list/detail toggle). Initial values are static so SSR and the
@@ -731,43 +747,121 @@ export function MailWorkspace() {
   async function loadAutomationSettings() {
     const res = await fetch("/api/automation/settings");
     if (!res.ok) return;
-    const data = (await res.json()) as { settings?: { runIntervalMinutes?: number } };
-    const value = data.settings?.runIntervalMinutes;
-    if (typeof value === "number" && Number.isFinite(value) && value >= 5) {
-      setNewMailCheckIntervalMinutes(value);
+    const data = (await res.json()) as {
+      settings?: { runIntervalMinutes?: number; mailScrollBatchSize?: number };
+    };
+    const interval = data.settings?.runIntervalMinutes;
+    if (typeof interval === "number" && Number.isFinite(interval) && interval >= 5) {
+      setNewMailCheckIntervalMinutes(interval);
+    }
+    const batch = data.settings?.mailScrollBatchSize;
+    if (typeof batch === "number" && Number.isFinite(batch)) {
+      setMailScrollBatchSize(snapMailScrollBatchSize(batch));
     }
   }
 
-  async function loadEmails() {
-    if (!selectedAccountId || !selectedFolderPath) {
-      setEmails([]);
-      setSelectedEmail(null);
-      return [] as Email[];
-    }
-    setIsLoadingEmails(true);
-    setUiError("");
+  function mailListSearchParams(cursor: string | null) {
     const params = new URLSearchParams({
       accountId: selectedAccountId,
       folder: selectedFolderPath,
       sort,
-      limit: "200",
+      limit: String(mailScrollBatchSize),
     });
     if (query.trim()) params.set("q", query.trim());
     if (hasAttachmentsFilter) params.set("hasAttachments", "true");
     if (actionRequiredFilter) params.set("actionRequired", "true");
     if (tab === "unread") params.set("isRead", "false");
+    if (cursor) params.set("cursor", cursor);
+    return params;
+  }
 
-    const res = await fetch(`/api/search?${params.toString()}`);
+  async function loadMoreEmails() {
+    const cursor = emailsNextCursorRef.current;
+    if (
+      !emailsHasMoreRef.current ||
+      !cursor ||
+      loadMoreInFlightRef.current ||
+      isLoadingEmailsRef.current
+    ) {
+      return;
+    }
+    if (!selectedAccountId || !selectedFolderPath) return;
+    loadMoreInFlightRef.current = true;
+    setIsLoadingMoreEmails(true);
+    setUiError("");
+    try {
+      const res = await fetch(`/api/search?${mailListSearchParams(cursor).toString()}`);
+      if (!res.ok) {
+        setUiError(await readErrorMessage(res, "Weitere E-Mails konnten nicht geladen werden."));
+        return;
+      }
+      const data = (await res.json()) as {
+        emails?: Email[];
+        pageInfo?: { nextCursor?: string | null; hasMore?: boolean };
+      };
+      const more = data.emails ?? [];
+      const pageInfo = data.pageInfo;
+      setEmails((prev) => {
+        const seen = new Set(prev.map((e) => e.id));
+        const merged = [...prev];
+        for (const e of more) {
+          if (!seen.has(e.id)) {
+            seen.add(e.id);
+            merged.push(e);
+          }
+        }
+        return merged;
+      });
+      const nextC = pageInfo?.nextCursor ?? null;
+      const morePages = pageInfo?.hasMore ?? false;
+      emailsNextCursorRef.current = nextC;
+      emailsHasMoreRef.current = morePages;
+      setEmailsHasMore(morePages);
+    } finally {
+      loadMoreInFlightRef.current = false;
+      setIsLoadingMoreEmails(false);
+    }
+  }
+
+  loadMoreEmailsRef.current = loadMoreEmails;
+
+  async function loadEmails() {
+    if (!selectedAccountId || !selectedFolderPath) {
+      setEmails([]);
+      setSelectedEmail(null);
+      emailsNextCursorRef.current = null;
+      emailsHasMoreRef.current = false;
+      setEmailsHasMore(false);
+      return [] as Email[];
+    }
+    isLoadingEmailsRef.current = true;
+    setIsLoadingEmails(true);
+    setUiError("");
+    emailsNextCursorRef.current = null;
+    emailsHasMoreRef.current = false;
+    setEmailsHasMore(false);
+
+    const res = await fetch(`/api/search?${mailListSearchParams(null).toString()}`);
     if (!res.ok) {
       setUiError(await readErrorMessage(res, "E-Mails konnten nicht geladen werden."));
       setEmails([]);
       setSelectedEmail(null);
+      isLoadingEmailsRef.current = false;
       setIsLoadingEmails(false);
       return [] as Email[];
     }
 
-    const data = await res.json();
+    const data = (await res.json()) as {
+      emails?: Email[];
+      pageInfo?: { nextCursor?: string | null; hasMore?: boolean };
+    };
     const nextEmails: Email[] = data.emails ?? [];
+    const pageInfo = data.pageInfo;
+    const nextC = pageInfo?.nextCursor ?? null;
+    const more = pageInfo?.hasMore ?? false;
+    emailsNextCursorRef.current = nextC;
+    emailsHasMoreRef.current = more;
+    setEmailsHasMore(more);
     setEmails(nextEmails);
     if (!nextEmails.length) {
       setSelectedEmail(null);
@@ -776,6 +870,7 @@ export function MailWorkspace() {
       setMobileView("list");
       setShowActionsMenu(false);
     }
+    isLoadingEmailsRef.current = false;
     setIsLoadingEmails(false);
     return nextEmails;
   }
@@ -1450,6 +1545,26 @@ export function MailWorkspace() {
     };
   }, [isBodyMaximized]);
 
+  // Mobile: verhindert Seiten-Scroll (Adressleiste / 100vh); innere Panels scrollen stattdessen.
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevHtmlHeight = html.style.height;
+    const prevBodyHeight = body.style.height;
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    html.style.height = "100%";
+    body.style.height = "100%";
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      html.style.height = prevHtmlHeight;
+      body.style.height = prevBodyHeight;
+    };
+  }, []);
+
   useEffect(() => {
     if (!selectedAccountId) return;
     const timer = setTimeout(() => {
@@ -1473,7 +1588,23 @@ export function MailWorkspace() {
     actionRequiredFilter,
     tab,
     sort,
+    mailScrollBatchSize,
   ]);
+
+  useEffect(() => {
+    const root = listScrollRef.current;
+    const target = loadMoreSentinelRef.current;
+    if (!root || !target || !emailsHasMore) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        void loadMoreEmailsRef.current();
+      },
+      { root, rootMargin: "200px", threshold: 0 },
+    );
+    obs.observe(target);
+    return () => obs.disconnect();
+  }, [emailsHasMore, emails.length, selectedAccountId, selectedFolderPath]);
 
   // Reset selection whenever the user pivots context (account, folder, filter,
   // search query). Otherwise selected mail-IDs would silently apply to a
@@ -1629,8 +1760,8 @@ export function MailWorkspace() {
 
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-gray-50">
-      <header className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 shadow-sm md:px-4">
+    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gray-50">
+      <header className="sticky top-0 z-20 flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 shadow-sm md:px-4">
         <button
           onClick={() => setFoldersOpen((v) => !v)}
           aria-label={foldersOpen ? "Ordner einklappen" : "Ordner ausklappen"}
@@ -1864,7 +1995,7 @@ export function MailWorkspace() {
       ) : null}
 
       <div
-        className="flex flex-1 flex-col overflow-hidden lg:flex-row"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row"
         style={
           {
             "--mp-folder-w": `${folderWidth}px`,
@@ -1874,7 +2005,7 @@ export function MailWorkspace() {
       >
         {foldersOpen ? (
           <aside
-            className={`flex flex-col border-r border-gray-200 bg-white lg:w-[var(--mp-folder-w)] lg:shrink-0 ${
+            className={`flex max-h-[50dvh] min-h-0 shrink-0 flex-col border-r border-gray-200 bg-white lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 ${
               mobileView !== "list" ? "hidden lg:flex" : "flex"
             }`}
           >
@@ -1890,7 +2021,7 @@ export function MailWorkspace() {
                 ↻
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto py-1 text-sm">
+            <div className="min-h-0 flex-1 overflow-y-auto py-1 text-sm">
               {folders.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-gray-500">
                   {selectedAccountId ? "Lade Ordner..." : "Kein Konto gewählt."}
@@ -1941,7 +2072,7 @@ export function MailWorkspace() {
         ) : null}
 
         <section
-          className={`flex flex-col border-r border-gray-200 bg-white lg:w-[var(--mp-list-w)] lg:shrink-0 ${
+          className={`flex min-h-0 flex-1 flex-col border-r border-gray-200 bg-white lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 ${
             mobileView === "detail" ? "hidden lg:flex" : "flex"
           }`}
         >
@@ -2100,7 +2231,10 @@ export function MailWorkspace() {
             </div>
           ) : null}
 
-          <div className="flex-1 overflow-y-auto">
+          <div
+            ref={listScrollRef}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
             {isLoadingEmails ? (
               <p className="px-4 py-3 text-sm text-gray-600">Lade E-Mails...</p>
             ) : null}
@@ -2239,13 +2373,26 @@ export function MailWorkspace() {
                 );
               })}
             </ul>
+            {emails.length > 0 && emailsHasMore ? (
+              <div
+                ref={loadMoreSentinelRef}
+                className="h-px w-full shrink-0"
+                aria-hidden
+              />
+            ) : null}
+            {isLoadingMoreEmails ? (
+              <p className="px-4 py-3 text-center text-xs text-gray-500">Lade weitere Mails…</p>
+            ) : null}
+            {!isLoadingEmails && emails.length > 0 && !emailsHasMore ? (
+              <p className="px-4 py-3 text-center text-xs text-gray-400">Alle geladenen Mails angezeigt.</p>
+            ) : null}
           </div>
         </section>
 
         <ResizeHandle onDrag={dragList} ariaLabel="Listenbreite ändern" />
 
         <section
-          className={`flex flex-col bg-white lg:min-w-0 lg:flex-1 ${
+          className={`flex min-h-0 flex-1 flex-col bg-white lg:min-w-0 ${
             mobileView === "list" ? "hidden lg:flex" : "flex"
           }`}
         >
@@ -2434,7 +2581,7 @@ export function MailWorkspace() {
                 <p className="px-4 py-2 text-sm text-gray-600">Lade Detail...</p>
               ) : null}
 
-              <div className="flex-1 overflow-y-auto px-4 py-4 pb-20 lg:pb-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-20 lg:pb-4">
                 {selectedEmail.aiSummaryShort ? (
                   <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-sm">
                     <p className="font-semibold text-blue-900">KI-Zusammenfassung</p>

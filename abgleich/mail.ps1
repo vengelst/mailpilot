@@ -5,7 +5,7 @@
 .DESCRIPTION
     Script asks all values interactively, offers a menu and supports:
       1) App checks + push/version workflow
-      2) Deploy app to server
+      2) Push to GitHub + deploy app to server
       3) Deploy app + copy/import DB file to server
 #>
 [CmdletBinding()]
@@ -519,7 +519,7 @@ function Copy-And-Import-DbFile {
     $qServerPath = Quote-Bash $ServerPath
     $qRemoteFile = Quote-Bash $remoteFile
 
-    Write-Step "Schritt 5/7: SQL auf Server kopieren"
+    Write-Step "SQL auf Server kopieren"
     Invoke-Checked "scp $LocalDbFile -> ${sshTarget}:$remoteFile" {
         scp -o StrictHostKeyChecking=accept-new $LocalDbFile "${sshTarget}:$remoteFile"
     }
@@ -533,7 +533,7 @@ function Copy-And-Import-DbFile {
         ' < ' + $qRemoteFile
     $remoteExec = "bash -lc " + (Quote-Bash $importCmd)
 
-    Write-Step "Schritt 6/7: SQL auf Server einspielen"
+    Write-Step "SQL auf Server einspielen"
     Invoke-Checked "ssh $sshTarget (db import)" {
         ssh -o StrictHostKeyChecking=accept-new $sshTarget $remoteExec
     }
@@ -566,10 +566,11 @@ Show-DeployConfig -config $cfg
 while ($true) {
     Write-Step "MailPilot interactive menu"
     Write-Host "  1) App pruefen + Push/Version" -ForegroundColor Gray
-    Write-Host "  2) Nur App auf Server deployen" -ForegroundColor Gray
+    Write-Host "  2) Aenderungen nach GitHub pushen + App auf Server deployen" -ForegroundColor Gray
     Write-Host "  3) SQL erzeugen + Push + Deploy + SQL copy/import + App restart" -ForegroundColor Gray
     Write-Host "  4) Deploy-Konfiguration anzeigen/aendern" -ForegroundColor Gray
     Write-Host "  5) Beenden" -ForegroundColor Gray
+    Write-Host "  6) Nur Nginx-Konfiguration auf Server (bei Bedarf)" -ForegroundColor Gray
     $choice = Ask-Text "Auswahl" "5"
 
     switch ($choice) {
@@ -578,28 +579,23 @@ while ($true) {
             Handle-PushAndVersion -branch $branch -remoteName $remoteName -repoUrl $repoUrl
         }
         "2" {
-            Invoke-ServerDeploy -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
-                -RepoUrl $repoUrl -Branch $branch -ForceServerReset:$forceServerReset -SkipMigrate:$true
-            Install-NginxConfig -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
-                -NginxConfigLocalPath $nginxConfigLocalPath -NginxConfigName $nginxConfigName `
-                -NginxSitesAvailablePath $nginxSitesAvailablePath -NginxSitesEnabledPath $nginxSitesEnabledPath
-        }
-        "3" {
-            Write-Step "Schritt 1/7: SQL lokal erzeugen"
-            $dbFile = Create-LocalDbDumpFile
-            Write-Step "Schritt 2/7: App nach GitHub (Commit/Push)"
             Handle-PushAndVersion -branch $branch -remoteName $remoteName -repoUrl $repoUrl
-            Write-Step "Schritt 3/7: App auf Server deployen"
             Invoke-ServerDeploy -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
                 -RepoUrl $repoUrl -Branch $branch -ForceServerReset:$forceServerReset -SkipMigrate:$false
-            Write-Step "Schritt 4/7: Nginx auf Server aktualisieren"
-            Install-NginxConfig -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
-                -NginxConfigLocalPath $nginxConfigLocalPath -NginxConfigName $nginxConfigName `
-                -NginxSitesAvailablePath $nginxSitesAvailablePath -NginxSitesEnabledPath $nginxSitesEnabledPath
+        }
+        "3" {
+            Write-Step "Schritt 1/5: SQL lokal erzeugen"
+            $dbFile = Create-LocalDbDumpFile
+            Write-Step "Schritt 2/5: App nach GitHub (Commit/Push)"
+            Handle-PushAndVersion -branch $branch -remoteName $remoteName -repoUrl $repoUrl
+            Write-Step "Schritt 3/5: App auf Server deployen"
+            Invoke-ServerDeploy -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
+                -RepoUrl $repoUrl -Branch $branch -ForceServerReset:$forceServerReset -SkipMigrate:$false
+            Write-Step "Schritt 4/5: SQL auf Server kopieren und einspielen"
             Copy-And-Import-DbFile -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath -LocalDbFile $dbFile
-            Write-Step "Schritt 7/7: App auf Server neu starten"
+            Write-Step "Schritt 5/5: App auf Server neu starten"
             Restart-ServerApp -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath
-            Write-Ok "Punkt 3 abgeschlossen (alle 7 Schritte erfolgreich)."
+            Write-Ok "Punkt 3 abgeschlossen (alle 5 Schritte erfolgreich)."
         }
         "4" {
             $cfg = Edit-DeployConfig -configPathAndConfig @{ path = $configPath; config = $cfg }
@@ -617,6 +613,11 @@ while ($true) {
             Show-DeployConfig -config $cfg
         }
         "5" { break }
+        "6" {
+            Install-NginxConfig -ServerHost $serverHost -ServerUser $serverUser -ServerPath $serverPath `
+                -NginxConfigLocalPath $nginxConfigLocalPath -NginxConfigName $nginxConfigName `
+                -NginxSitesAvailablePath $nginxSitesAvailablePath -NginxSitesEnabledPath $nginxSitesEnabledPath
+        }
         default { Write-Warn2 "Ungueltige Auswahl." }
     }
 }

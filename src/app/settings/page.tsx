@@ -28,6 +28,11 @@ const sections = [
     description: "Standardsignatur pflegen und Einfüge-Regeln setzen.",
   },
   {
+    href: "/settings/mail",
+    title: "Mail-Ansicht",
+    description: "Wie viele E-Mails beim Scrollen in der Liste nachgeladen werden.",
+  },
+  {
     href: "/settings/users",
     title: "Benutzer",
     description: "Anmeldungen, Rollen und Passwörter verwalten.",

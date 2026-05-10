@@ -27,6 +27,7 @@ type AutomationSettings = {
   aiMinConfidenceForTrash: number;
   aiMinConfidenceForSpam: number;
   autoSaveAttachments: boolean;
+  mailScrollBatchSize: number;
 };
 
 const defaultSettings: AutomationSettings = {
@@ -39,6 +40,7 @@ const defaultSettings: AutomationSettings = {
   aiMinConfidenceForTrash: 0.98,
   aiMinConfidenceForSpam: 0.98,
   autoSaveAttachments: false,
+  mailScrollBatchSize: 100,
 };
 
 export default function AutomationPage() {

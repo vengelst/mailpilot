@@ -13,6 +13,7 @@ const patchSchema = z.object({
   aiMinConfidenceForTrash: z.number().min(0).max(1).optional(),
   aiMinConfidenceForSpam: z.number().min(0).max(1).optional(),
   autoSaveAttachments: z.boolean().optional(),
+  mailScrollBatchSize: z.number().int().min(50).max(500).optional(),
 });
 
 export async function GET() {

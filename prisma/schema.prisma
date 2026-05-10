@@ -322,6 +322,8 @@ model AutomationSettings {
   aiMinConfidenceForTrash Float    @default(0.98)
   aiMinConfidenceForSpam  Float    @default(0.98)
   autoSaveAttachments     Boolean  @default(false)
+  /// Mails pro Anfrage beim Nachladen in der Posteingangsliste (50–500, s. UI).
+  mailScrollBatchSize     Int      @default(100)
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
