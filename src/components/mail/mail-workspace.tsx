@@ -5,6 +5,7 @@ import {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1688,38 +1689,56 @@ export function MailWorkspace() {
     };
   }, [maximizedBodyMenuOpen]);
 
-  useEffect(() => {
+  // Iframe-Höhe nur per DOM setzen — kein `height` im React-`style`, sonst überschreibt jedes
+  // Re-Render (z. B. nach loadBody) die Messung und schneidet lange Mails auf ~360px ab.
+  useLayoutEffect(() => {
     if (bodyMode !== "html" || !safeMailDocument) return;
-    let attached: HTMLIFrameElement | null = null;
-    const resize = () => {
-      const frame = mailBodyIframeRef.current;
-      if (!frame) return;
+    const frame = mailBodyIframeRef.current;
+    if (!frame) return;
+
+    let ro: ResizeObserver | null = null;
+
+    const measureAndApplyHeight = () => {
+      const el = mailBodyIframeRef.current;
+      if (!el) return;
       try {
-        const doc = frame.contentDocument;
+        const doc = el.contentDocument;
         const b = doc?.body;
-        const rootEl = doc?.documentElement;
-        if (!b || !rootEl) return;
-        const h = Math.max(b.scrollHeight, rootEl.scrollHeight, b.offsetHeight);
-        frame.style.height = `${Math.min(Math.max(h + 48, 360), 16000)}px`;
+        const htmlEl = doc?.documentElement;
+        if (!b || !htmlEl) return;
+        const h = Math.max(
+          b.scrollHeight,
+          htmlEl.scrollHeight,
+          b.offsetHeight,
+          htmlEl.offsetHeight,
+        );
+        el.style.height = `${Math.max(h + 64, 320)}px`;
       } catch {
         /* ignore */
       }
     };
+
     const onLoad = () => {
-      resize();
-      requestAnimationFrame(resize);
-      window.setTimeout(resize, 150);
-      window.setTimeout(resize, 700);
+      measureAndApplyHeight();
+      requestAnimationFrame(measureAndApplyHeight);
+      window.setTimeout(measureAndApplyHeight, 200);
+      window.setTimeout(measureAndApplyHeight, 1200);
+      const doc = frame.contentDocument;
+      const b = doc?.body;
+      if (b && typeof ResizeObserver !== "undefined") {
+        ro?.disconnect();
+        ro = new ResizeObserver(() => measureAndApplyHeight());
+        ro.observe(b);
+      }
     };
-    const raf = requestAnimationFrame(() => {
-      attached = mailBodyIframeRef.current;
-      if (!attached) return;
-      attached.addEventListener("load", onLoad);
-      onLoad();
-    });
+
+    frame.addEventListener("load", onLoad);
+    onLoad();
+
     return () => {
-      cancelAnimationFrame(raf);
-      attached?.removeEventListener("load", onLoad);
+      frame.removeEventListener("load", onLoad);
+      ro?.disconnect();
+      frame.style.height = "";
     };
   }, [safeMailDocument, bodyMode, selectedEmail?.id]);
 
@@ -3011,13 +3030,12 @@ export function MailWorkspace() {
                     sandbox=""
                     srcDoc={safeMailDocument}
                     referrerPolicy="no-referrer"
-                    className="block w-full max-w-full rounded-lg border border-gray-100 bg-white"
-                    style={{ minHeight: "360px", height: "360px", border: "none" }}
+                    className="block w-full max-w-full min-h-[45dvh] rounded-lg border border-gray-100 bg-white lg:min-h-[480px]"
+                    style={{ border: "none" }}
                   />
                 ) : (
                   <div
-                    className="whitespace-pre-wrap overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800"
-                    style={{ minHeight: "320px" }}
+                    className="min-h-[45dvh] max-w-full whitespace-pre-wrap break-words rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800 lg:min-h-[400px]"
                   >
                     {(() => {
                       const plain =
@@ -3609,8 +3627,8 @@ export function MailWorkspace() {
                   sandbox=""
                   srcDoc={safeMailDocument}
                   referrerPolicy="no-referrer"
-                  className="block w-full max-w-full rounded-lg border border-gray-100 bg-white"
-                  style={{ minHeight: "360px", height: "360px", border: "none" }}
+                  className="block w-full max-w-full min-h-[60vh] rounded-lg border border-gray-100 bg-white"
+                  style={{ border: "none" }}
                 />
               ) : (
                 <div className="min-h-[50vh] whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800">

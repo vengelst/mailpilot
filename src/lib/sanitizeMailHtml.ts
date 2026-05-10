@@ -179,9 +179,9 @@ export function buildSafeMailDocument(rawHtml: string | null | undefined): strin
 <html><head><meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-src 'none'; script-src 'none';" />
 <style>
-/* Viele Newsletter setzen overflow:hidden / fixe Hoehen — Inhalt sonst abgeschnitten. */
-html,body{height:auto!important;max-height:none!important;min-height:0!important;overflow-x:hidden!important;overflow-y:auto!important}
-body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:12px;font-size:14px;line-height:1.5;box-sizing:border-box}
+/* Newsletter-CSS neutralisieren; iOS: Touch-Scroll im iframe */
+html{height:auto!important;max-height:none!important;overflow-x:hidden!important;overflow-y:scroll;-webkit-overflow-scrolling:touch}
+body{height:auto!important;max-height:none!important;min-height:min-content;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;font-family:Arial,Helvetica,sans-serif;color:#111;margin:12px;font-size:14px;line-height:1.5;box-sizing:border-box}
 *,*::before,*::after{box-sizing:inherit}
 img{max-width:100%;height:auto}
 a{color:#1d4ed8}
