@@ -113,13 +113,68 @@ export function sanitizeMailHtml(input: string | null | undefined): string {
   }
 }
 
+const URL_IN_ANGLE_OR_BARE = /<(https?:\/\/[^>\s]+)>|(https?:\/\/[^\s<]+)/gi;
+
+function escapeHtmlAttr(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function trimTrailingJunkFromBareUrl(raw: string): string {
+  return raw.replace(/[)\].,;:!?]+$/g, "");
+}
+
+function safeHttpHrefForLinkify(candidate: string): string | null {
+  try {
+    const u = new URL(candidate);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+function htmlContainsAnchorTag(html: string): boolean {
+  return /<a(\s|>|\/)/i.test(html);
+}
+
+/**
+ * Nur Text zwischen Tags — keine bestehenden <a> doppelt wrappen.
+ * Split ist fuer typische Mails ausreichend (keine '>' in Attributwerten).
+ */
+function linkifyBareUrlsBetweenTags(html: string): string {
+  return html
+    .split(/(<[^>]+>)/g)
+    .map((segment) => {
+      if (segment.startsWith("<")) return segment;
+      return segment.replace(
+        new RegExp(URL_IN_ANGLE_OR_BARE.source, "gi"),
+        (full, bracketed: string | undefined, bare: string | undefined) => {
+          const normalized = bracketed ? bracketed : trimTrailingJunkFromBareUrl(bare ?? "");
+          const href = safeHttpHrefForLinkify(normalized);
+          if (!href) return full;
+          return `<a href="${escapeHtmlAttr(href)}">${escapeHtmlAttr(normalized)}</a>`;
+        },
+      );
+    })
+    .join("");
+}
+
 /**
  * Wraps the sanitized email HTML in a minimal document with a tight
  * Content-Security-Policy meta tag so even broken sandbox handling can't
  * fetch remote scripts/frames.
  */
 export function buildSafeMailDocument(rawHtml: string | null | undefined): string {
-  const safeBody = sanitizeMailHtml(rawHtml);
+  const firstPass = sanitizeMailHtml(rawHtml);
+  const withLinks =
+    firstPass && !htmlContainsAnchorTag(firstPass)
+      ? linkifyBareUrlsBetweenTags(firstPass)
+      : firstPass;
+  const safeBody = withLinks !== firstPass ? sanitizeMailHtml(withLinks) : firstPass;
   return `<!doctype html>
 <html><head><meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-src 'none'; script-src 'none';" />

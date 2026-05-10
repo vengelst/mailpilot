@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { buildSafeMailDocument } from "@/lib/sanitizeMailHtml";
+import { linkifyMailPlainText } from "@/lib/linkifyMailPlainText";
 import {
   DEFAULT_MAIL_SCROLL_BATCH,
   snapMailScrollBatchSize,
@@ -29,6 +30,7 @@ const LIST_WIDTH_MAX = 700;
 
 const FOLDER_LS_KEY = "mailpilot.layout.folderWidth";
 const LIST_LS_KEY = "mailpilot.layout.listWidth";
+const MOBILE_MAIN_HEADER_LS_KEY = "mailpilot.layout.mobileMainHeaderExpanded";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -480,6 +482,7 @@ export function MailWorkspace() {
   const [emailDetailMenuOpen, setEmailDetailMenuOpen] = useState(false);
   const [maximizedBodyMenuOpen, setMaximizedBodyMenuOpen] = useState(false);
   const [foldersOpen, setFoldersOpen] = useState(true);
+  const [mobileMainHeaderExpanded, setMobileMainHeaderExpanded] = useState(true);
   const [accountExpanded, setAccountExpanded] = useState(true);
   const [expandedFolderPaths, setExpandedFolderPaths] = useState<Set<string>>(new Set());
   const [bodyContent, setBodyContent] = useState<{ text: string; html: string } | null>(null);
@@ -1797,6 +1800,25 @@ export function MailWorkspace() {
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(MOBILE_MAIN_HEADER_LS_KEY);
+      if (v === "0") setMobileMainHeaderExpanded(false);
+      if (v === "1") setMobileMainHeaderExpanded(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function setMobileMainHeaderExpandedPersist(next: boolean) {
+    setMobileMainHeaderExpanded(next);
+    try {
+      window.localStorage.setItem(MOBILE_MAIN_HEADER_LS_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
   function dragFolder(dx: number) {
     setFolderWidth((prev) => {
       const next = clamp(prev + dx, FOLDER_WIDTH_MIN, FOLDER_WIDTH_MAX);
@@ -1848,12 +1870,23 @@ export function MailWorkspace() {
 
   return (
     <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gray-50">
-      <header className="sticky top-0 z-20 flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 shadow-sm md:px-4">
+      <div
+        className={`z-20 shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-white px-2 py-1.5 shadow-sm lg:hidden ${
+          mobileMainHeaderExpanded ? "hidden" : "flex"
+        }`}
+      >
+        <span className="min-w-0 truncate text-xs font-semibold text-gray-800">
+          MailPilot
+          {selectedAccount ? (
+            <span className="font-normal text-gray-600"> · {selectedAccount.name}</span>
+          ) : null}
+        </span>
         <button
-          onClick={() => setFoldersOpen((v) => !v)}
-          aria-label={foldersOpen ? "Ordner einklappen" : "Ordner ausklappen"}
-          title={foldersOpen ? "Ordner einklappen" : "Ordner ausklappen"}
-          className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-gray-700 hover:bg-gray-50"
+          type="button"
+          onClick={() => setMobileMainHeaderExpandedPersist(true)}
+          className="shrink-0 rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+          aria-label="Hauptmenü anzeigen"
+          title="Hauptmenü anzeigen"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -1864,13 +1897,65 @@ export function MailWorkspace() {
             strokeLinecap="round"
             strokeLinejoin="round"
             className="h-4 w-4"
+            aria-hidden
           >
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <line x1="3" y1="18" x2="21" y2="18" />
+            <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <h1 className="text-base font-semibold text-gray-900">MailPilot</h1>
+      </div>
+
+      <header
+        className={`sticky top-0 z-20 shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 shadow-sm md:px-4 lg:flex ${
+          mobileMainHeaderExpanded ? "flex" : "hidden"
+        }`}
+      >
+        <div className="flex w-full shrink-0 items-center gap-2 lg:contents">
+          <button
+            onClick={() => setFoldersOpen((v) => !v)}
+            aria-label={foldersOpen ? "Ordner einklappen" : "Ordner ausklappen"}
+            title={foldersOpen ? "Ordner einklappen" : "Ordner ausklappen"}
+            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-gray-700 hover:bg-gray-50"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          <h1 className="min-w-0 shrink truncate text-base font-semibold text-gray-900 lg:shrink-0 lg:overflow-visible lg:whitespace-normal">
+            MailPilot
+          </h1>
+          <button
+            type="button"
+            onClick={() => setMobileMainHeaderExpandedPersist(false)}
+            className="ml-auto shrink-0 rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50 lg:hidden"
+            aria-label="Hauptmenü einklappen"
+            title="Mehr Platz für Mails"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+              aria-hidden
+            >
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+          </button>
+        </div>
 
         <select
           value={selectedAccountId}
@@ -2934,10 +3019,16 @@ export function MailWorkspace() {
                     className="whitespace-pre-wrap overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800"
                     style={{ minHeight: "320px" }}
                   >
-                    {bodyContent?.text ||
-                      selectedEmail.textPreview ||
-                      selectedEmail.snippet ||
-                      "(Kein Mailinhalt verfügbar.)"}
+                    {(() => {
+                      const plain =
+                        bodyContent?.text ||
+                        selectedEmail.textPreview ||
+                        selectedEmail.snippet ||
+                        "";
+                      return plain
+                        ? linkifyMailPlainText(plain)
+                        : "(Kein Mailinhalt verfügbar.)";
+                    })()}
                   </div>
                 )}
 
@@ -3523,10 +3614,16 @@ export function MailWorkspace() {
                 />
               ) : (
                 <div className="min-h-[50vh] whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800">
-                  {bodyContent.text ||
-                    selectedEmail.textPreview ||
-                    selectedEmail.snippet ||
-                    "(Kein Mailinhalt verfügbar.)"}
+                  {(() => {
+                    const plain =
+                      bodyContent.text ||
+                      selectedEmail.textPreview ||
+                      selectedEmail.snippet ||
+                      "";
+                    return plain
+                      ? linkifyMailPlainText(plain)
+                      : "(Kein Mailinhalt verfügbar.)";
+                  })()}
                 </div>
               )}
             </div>
