@@ -381,9 +381,9 @@ function formatDateTimeShort(value: string | null | undefined) {
   return `${datePart}, ${timePart}`;
 }
 
-function formatDetailDate(value: string | null) {
-  if (!value) return "-";
-  const d = new Date(value);
+function formatDetailDate(value: string | Date | null | undefined) {
+  if (value == null) return "-";
+  const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.valueOf())) return "-";
   return d.toLocaleString("de-DE", {
     weekday: "short",
@@ -477,7 +477,8 @@ export function MailWorkspace() {
   const [attachmentTargets, setAttachmentTargets] = useState<
     Record<string, { provider: "google_drive" | "onedrive" | "mock"; targetPath: string }>
   >({});
-  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [emailDetailMenuOpen, setEmailDetailMenuOpen] = useState(false);
+  const [maximizedBodyMenuOpen, setMaximizedBodyMenuOpen] = useState(false);
   const [foldersOpen, setFoldersOpen] = useState(true);
   const [accountExpanded, setAccountExpanded] = useState(true);
   const [expandedFolderPaths, setExpandedFolderPaths] = useState<Set<string>>(new Set());
@@ -507,6 +508,7 @@ export function MailWorkspace() {
     includeOnForward: true,
   });
   const composeEditorRef = useRef<HTMLDivElement | null>(null);
+  const mailBodyIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeMode, setComposeMode] = useState<ComposeMode>("new");
   const [composeSaving, setComposeSaving] = useState(false);
@@ -868,7 +870,7 @@ export function MailWorkspace() {
     } else if (selectedEmail && !nextEmails.some((e) => e.id === selectedEmail.id)) {
       setSelectedEmail(null);
       setMobileView("list");
-      setShowActionsMenu(false);
+      setEmailDetailMenuOpen(false);
     }
     isLoadingEmailsRef.current = false;
     setIsLoadingEmails(false);
@@ -877,7 +879,7 @@ export function MailWorkspace() {
 
   async function loadEmail(id: string) {
     setIsLoadingDetail(true);
-    setShowActionsMenu(false);
+    setEmailDetailMenuOpen(false);
     setHoveredAttachmentPreview(null);
     setBodyContent(null);
     setBodyError("");
@@ -887,7 +889,7 @@ export function MailWorkspace() {
     if (!res.ok) {
       setUiError("E-Mail konnte nicht geladen werden.");
       setSelectedEmail(null);
-      setShowActionsMenu(false);
+      setEmailDetailMenuOpen(false);
       setIsLoadingDetail(false);
       return;
     }
@@ -1162,7 +1164,7 @@ export function MailWorkspace() {
     } else {
       setSelectedEmail(null);
       setMobileView("list");
-      setShowActionsMenu(false);
+      setEmailDetailMenuOpen(false);
     }
     await reloadFolders();
   }
@@ -1545,6 +1547,10 @@ export function MailWorkspace() {
     };
   }, [isBodyMaximized]);
 
+  useEffect(() => {
+    if (!isBodyMaximized) setMaximizedBodyMenuOpen(false);
+  }, [isBodyMaximized]);
+
   // Mobile: verhindert Seiten-Scroll (Adressleiste / 100vh); innere Panels scrollen stattdessen.
   useEffect(() => {
     const html = document.documentElement;
@@ -1632,6 +1638,87 @@ export function MailWorkspace() {
       window.removeEventListener("click", onClickAway);
     };
   }, [showSyncMenu]);
+
+  useEffect(() => {
+    if (!emailDetailMenuOpen) return;
+    let cancelled = false;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setEmailDetailMenuOpen(false);
+    }
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest("[data-email-detail-menu-root]")) return;
+      setEmailDetailMenuOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    const t = window.setTimeout(() => {
+      if (!cancelled) window.addEventListener("pointerdown", onPointerDown, true);
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [emailDetailMenuOpen]);
+
+  useEffect(() => {
+    if (!maximizedBodyMenuOpen) return;
+    let cancelled = false;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMaximizedBodyMenuOpen(false);
+    }
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest("[data-max-body-menu-root]")) return;
+      setMaximizedBodyMenuOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    const t = window.setTimeout(() => {
+      if (!cancelled) window.addEventListener("pointerdown", onPointerDown, true);
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [maximizedBodyMenuOpen]);
+
+  useEffect(() => {
+    if (bodyMode !== "html" || !safeMailDocument) return;
+    let attached: HTMLIFrameElement | null = null;
+    const resize = () => {
+      const frame = mailBodyIframeRef.current;
+      if (!frame) return;
+      try {
+        const doc = frame.contentDocument;
+        const b = doc?.body;
+        const rootEl = doc?.documentElement;
+        if (!b || !rootEl) return;
+        const h = Math.max(b.scrollHeight, rootEl.scrollHeight, b.offsetHeight);
+        frame.style.height = `${Math.min(Math.max(h + 48, 360), 16000)}px`;
+      } catch {
+        /* ignore */
+      }
+    };
+    const onLoad = () => {
+      resize();
+      requestAnimationFrame(resize);
+      window.setTimeout(resize, 150);
+      window.setTimeout(resize, 700);
+    };
+    const raf = requestAnimationFrame(() => {
+      attached = mailBodyIframeRef.current;
+      if (!attached) return;
+      attached.addEventListener("load", onLoad);
+      onLoad();
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      attached?.removeEventListener("load", onLoad);
+    };
+  }, [safeMailDocument, bodyMode, selectedEmail?.id]);
 
   useEffect(() => {
     if (!selectedAccountId || !selectedFolderPath) return;
@@ -1796,7 +1883,7 @@ export function MailWorkspace() {
             setSelectedEmail(null);
             setBodyContent(null);
             setMobileView("list");
-            setShowActionsMenu(false);
+            setEmailDetailMenuOpen(false);
           }}
           className="ml-2 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm"
         >
@@ -2054,7 +2141,7 @@ export function MailWorkspace() {
                               setSelectedEmail(null);
                               setBodyContent(null);
                               setMobileView("list");
-                              setShowActionsMenu(false);
+                              setEmailDetailMenuOpen(false);
                             }}
                           />
                         ))}
@@ -2407,126 +2494,221 @@ export function MailWorkspace() {
                 </button>
               </div>
 
-              <div className="border-b border-gray-100 px-4 py-3">
-                <h2 className="text-lg font-semibold text-gray-900 md:text-xl">
+              <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 md:px-4">
+                <span
+                  className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white sm:flex ${getAvatarColor(
+                    selectedEmail.fromEmail || selectedEmail.fromName || selectedEmail.id,
+                  )}`}
+                  aria-hidden
+                >
+                  {getInitials(selectedEmail.fromName, selectedEmail.fromEmail)}
+                </span>
+                <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 md:text-lg">
                   {selectedEmail.subject || "(Ohne Betreff)"}
                 </h2>
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <span
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ${getAvatarColor(
-                      selectedEmail.fromEmail || selectedEmail.fromName || selectedEmail.id,
-                    )}`}
-                  >
-                    {getInitials(selectedEmail.fromName, selectedEmail.fromEmail)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900">
-                      {senderDisplayName(selectedEmail)}
-                    </p>
-                    {selectedEmail.fromEmail &&
-                    selectedEmail.fromEmail !== senderDisplayName(selectedEmail) ? (
-                      <p className="truncate text-xs text-gray-600">
-                        &lt;{selectedEmail.fromEmail}&gt;
-                      </p>
-                    ) : null}
-                    <p className="truncate text-xs text-gray-500">
-                      An: {(selectedEmail.toEmails ?? []).join(", ") || "-"}
-                    </p>
-                  </div>
-                  <div className="ml-auto text-right text-xs text-gray-500">
-                    <p>Eingang: {formatDetailDate(selectedEmail.createdAt ?? selectedEmail.date)}</p>
-                    <p>Gesendet: {formatDetailDate(selectedEmail.date)}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 border-b border-gray-100 px-4 py-2">
-                <button
-                  onClick={replyToSelected}
-                  className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white"
-                >
-                  Antworten
-                </button>
-                <button
-                  onClick={forwardSelected}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
-                >
-                  Weiterleiten
-                </button>
-                <button
-                  onClick={() => runAction(`/api/emails/${selectedEmail.id}/mark-read`)}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
-                >
-                  Gelesen
-                </button>
-                <button
-                  onClick={() => runAction(`/api/emails/${selectedEmail.id}/mark-unread`)}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
-                >
-                  Ungelesen
-                </button>
-                <button
-                  onClick={() =>
-                    runAction(`/api/emails/${selectedEmail.id}/move`, { targetSpecial: "trash" })
-                  }
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
-                >
-                  Papierkorb
-                </button>
-                <button
-                  onClick={() =>
-                    runAction(`/api/emails/${selectedEmail.id}/move`, { targetSpecial: "spam" })
-                  }
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
-                >
-                  Spam
-                </button>
-                <button
-                  onClick={() => printSelectedEmail()}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
-                >
-                  Drucken
-                </button>
-                <select
-                  value={printMode}
-                  onChange={(e) => setPrintMode(e.target.value as "html" | "text")}
-                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700"
-                  title="Druckmodus"
-                >
-                  <option value="html">HTML</option>
-                  <option value="text">Text</option>
-                </select>
-
-                <div className="relative ml-auto">
+                <div className="relative shrink-0" data-email-detail-menu-root>
                   <button
-                    onClick={() => setShowActionsMenu((v) => !v)}
-                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEmailDetailMenuOpen((v) => !v);
+                    }}
+                    aria-label="Mail-Details und Befehle"
+                    aria-expanded={emailDetailMenuOpen}
+                    aria-haspopup="menu"
+                    className="flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
                   >
-                    Mehr ▾
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      className="h-5 w-5"
+                      aria-hidden
+                    >
+                      <circle cx="12" cy="5" r="1.75" />
+                      <circle cx="12" cy="12" r="1.75" />
+                      <circle cx="12" cy="19" r="1.75" />
+                    </svg>
                   </button>
-                  {showActionsMenu ? (
+                  {emailDetailMenuOpen ? (
                     <div
                       role="menu"
-                      onMouseLeave={() => setShowActionsMenu(false)}
-                      className="absolute right-0 z-10 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg"
+                      className="absolute right-0 z-30 mt-1 max-h-[min(85vh,560px)] w-[min(calc(100vw-2rem),18rem)] overflow-y-auto rounded-md border border-gray-200 bg-white py-2 text-sm shadow-lg"
                     >
+                      <div className="border-b border-gray-100 px-3 pb-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Details
+                        </p>
+                        <p className="mt-1 break-words text-sm font-medium text-gray-900">
+                          {selectedEmail.subject || "(Ohne Betreff)"}
+                        </p>
+                        <p className="mt-2 text-xs text-gray-700">
+                          {senderDisplayName(selectedEmail)}
+                          {selectedEmail.fromEmail ? (
+                            <span className="block break-all text-gray-600">
+                              &lt;{selectedEmail.fromEmail}&gt;
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="mt-1 break-words text-xs text-gray-600">
+                          An: {(selectedEmail.toEmails ?? []).join(", ") || "—"}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Eingang: {formatDetailDate(selectedEmail.createdAt)}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Gesendet: {formatDetailDate(selectedEmail.date)}
+                        </p>
+                      </div>
+
+                      {bodyContent && bodyContent.html && bodyContent.text ? (
+                        <div className="border-b border-gray-100 px-3 py-2">
+                          <p className="text-xs font-semibold text-gray-500">Ansicht</p>
+                          <div className="mt-1 flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setBodyMode("text")}
+                              className={`flex-1 rounded border px-2 py-1 text-xs ${
+                                bodyMode === "text"
+                                  ? "border-gray-900 bg-gray-900 text-white"
+                                  : "border-gray-300 text-gray-700"
+                              }`}
+                            >
+                              Text
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setBodyMode("html")}
+                              className={`flex-1 rounded border px-2 py-1 text-xs ${
+                                bodyMode === "html"
+                                  ? "border-gray-900 bg-gray-900 text-white"
+                                  : "border-gray-300 text-gray-700"
+                              }`}
+                            >
+                              HTML
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="border-b border-gray-100 px-3 py-2">
+                        <p className="text-xs font-semibold text-gray-500">Druck</p>
+                        <select
+                          value={printMode}
+                          onChange={(e) => setPrintMode(e.target.value as "html" | "text")}
+                          className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700"
+                          title="Druckmodus"
+                        >
+                          <option value="html">Druck: HTML</option>
+                          <option value="text">Druck: Text</option>
+                        </select>
+                        {bodyContent && (bodyContent.html || bodyContent.text) ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEmailDetailMenuOpen(false);
+                              setIsBodyMaximized(true);
+                            }}
+                            className="mt-2 w-full rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            Inhalt vergrößern
+                          </button>
+                        ) : null}
+                      </div>
+
                       <button
+                        type="button"
                         onClick={() => {
-                          setShowActionsMenu(false);
+                          setEmailDetailMenuOpen(false);
+                          replyToSelected();
+                        }}
+                        className="block w-full px-3 py-2 text-left font-medium hover:bg-gray-50"
+                      >
+                        Antworten
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailDetailMenuOpen(false);
+                          forwardSelected();
+                        }}
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        Weiterleiten
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailDetailMenuOpen(false);
+                          void runAction(`/api/emails/${selectedEmail.id}/mark-read`);
+                        }}
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        Gelesen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailDetailMenuOpen(false);
+                          void runAction(`/api/emails/${selectedEmail.id}/mark-unread`);
+                        }}
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        Ungelesen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailDetailMenuOpen(false);
+                          void runAction(`/api/emails/${selectedEmail.id}/move`, {
+                            targetSpecial: "trash",
+                          });
+                        }}
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        Papierkorb
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailDetailMenuOpen(false);
+                          void runAction(`/api/emails/${selectedEmail.id}/move`, {
+                            targetSpecial: "spam",
+                          });
+                        }}
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        Spam
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailDetailMenuOpen(false);
+                          printSelectedEmail();
+                        }}
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        Drucken
+                      </button>
+
+                      <div className="my-1 border-t border-gray-100" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailDetailMenuOpen(false);
                           void runAction(`/api/emails/${selectedEmail.id}/analyze`);
                         }}
-                        className="block w-full px-3 py-1.5 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
                       >
                         KI analysieren
                       </button>
-                      <div className="my-1 border-t border-gray-100" />
-                      <div className="flex items-center gap-1 px-3 py-1.5">
+                      <div className="px-3 py-2">
                         <select
                           value={moveTargetFolder}
                           onChange={(e) => setMoveTargetFolder(e.target.value)}
-                          className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                          className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs"
                         >
-                          <option value="">Ordner...</option>
+                          <option value="">Ordner wählen…</option>
                           {folders.map((folder) => (
                             <option key={folder.path} value={folder.path}>
                               {folder.displayName}
@@ -2534,41 +2716,43 @@ export function MailWorkspace() {
                           ))}
                         </select>
                         <button
+                          type="button"
                           onClick={() => {
-                            setShowActionsMenu(false);
+                            setEmailDetailMenuOpen(false);
                             void moveToSelectedFolder();
                           }}
-                          className="rounded border border-gray-300 px-2 py-1 text-xs"
+                          className="mt-2 w-full rounded border border-gray-300 px-2 py-1.5 text-xs hover:bg-gray-50"
                         >
                           Verschieben
                         </button>
                       </div>
-                      <div className="my-1 border-t border-gray-100" />
                       <button
+                        type="button"
                         onClick={() => {
-                          setShowActionsMenu(false);
+                          setEmailDetailMenuOpen(false);
                           void blockSender();
                         }}
-                        className="block w-full px-3 py-1.5 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
                       >
                         Absender blockieren
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
-                          setShowActionsMenu(false);
+                          setEmailDetailMenuOpen(false);
                           void blockDomain();
                         }}
-                        className="block w-full px-3 py-1.5 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
                       >
                         Domain blockieren
                       </button>
-                      <div className="my-1 border-t border-gray-100" />
                       <button
+                        type="button"
                         onClick={() => {
-                          setShowActionsMenu(false);
+                          setEmailDetailMenuOpen(false);
                           void createContactSuggestion();
                         }}
-                        className="block w-full px-3 py-1.5 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
                       >
                         Kontaktvorschlag erzeugen
                       </button>
@@ -2719,42 +2903,6 @@ export function MailWorkspace() {
                   </div>
                 ) : null}
 
-                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                  {bodyContent && bodyContent.html && bodyContent.text ? (
-                    <>
-                      <button
-                        onClick={() => setBodyMode("text")}
-                        className={`rounded border px-2 py-0.5 ${
-                          bodyMode === "text"
-                            ? "border-gray-900 bg-gray-900 text-white"
-                            : "border-gray-300 text-gray-700"
-                        }`}
-                      >
-                        Text
-                      </button>
-                      <button
-                        onClick={() => setBodyMode("html")}
-                        className={`rounded border px-2 py-0.5 ${
-                          bodyMode === "html"
-                            ? "border-gray-900 bg-gray-900 text-white"
-                            : "border-gray-300 text-gray-700"
-                        }`}
-                      >
-                        HTML
-                      </button>
-                    </>
-                  ) : null}
-                  {bodyContent && (bodyContent.html || bodyContent.text) ? (
-                    <button
-                      onClick={() => setIsBodyMaximized(true)}
-                      className="ml-auto rounded border border-gray-300 px-2 py-0.5 text-gray-700 hover:bg-gray-50"
-                      title="Mailinhalt vergrößern"
-                    >
-                      ⛶ Vergrößern
-                    </button>
-                  ) : null}
-                </div>
-
                 {isLoadingBody ? (
                   <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-600">
                     Lade Mailinhalt vom IMAP-Server...
@@ -2773,12 +2921,13 @@ export function MailWorkspace() {
                   bodyMode === "html" &&
                   bodyContent.html ? (
                   <iframe
+                    ref={mailBodyIframeRef}
                     title="Mailinhalt"
                     sandbox=""
                     srcDoc={safeMailDocument}
                     referrerPolicy="no-referrer"
-                    className="block w-full resize-y rounded-lg border border-gray-100 bg-white"
-                    style={{ height: "calc(100vh - 320px)", minHeight: "320px" }}
+                    className="block w-full max-w-full rounded-lg border border-gray-100 bg-white"
+                    style={{ minHeight: "360px", height: "360px", border: "none" }}
                   />
                 ) : (
                   <div
@@ -3263,70 +3412,117 @@ export function MailWorkspace() {
             aria-modal="true"
             aria-label="Mailinhalt vergrößert"
           >
-            <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-2">
-              <h2 className="truncate text-base font-semibold text-gray-900 md:text-lg">
+            <header className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4">
+              <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 md:text-lg">
                 {selectedEmail.subject || "(Ohne Betreff)"}
               </h2>
-              <div className="ml-auto flex items-center gap-2">
-                {bodyContent.html && bodyContent.text ? (
-                  <div className="flex gap-1 text-xs">
-                    <button
-                      onClick={() => setBodyMode("text")}
-                      className={`rounded border px-2 py-0.5 ${
-                        bodyMode === "text"
-                          ? "border-gray-900 bg-gray-900 text-white"
-                          : "border-gray-300 text-gray-700"
-                      }`}
-                    >
-                      Text
-                    </button>
-                    <button
-                      onClick={() => setBodyMode("html")}
-                      className={`rounded border px-2 py-0.5 ${
-                        bodyMode === "html"
-                          ? "border-gray-900 bg-gray-900 text-white"
-                          : "border-gray-300 text-gray-700"
-                      }`}
-                    >
-                      HTML
-                    </button>
+              <div className="relative shrink-0" data-max-body-menu-root>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMaximizedBodyMenuOpen((v) => !v);
+                  }}
+                  aria-label="Ansicht und Druck"
+                  aria-expanded={maximizedBodyMenuOpen}
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    className="h-5 w-5"
+                    aria-hidden
+                  >
+                    <circle cx="12" cy="5" r="1.75" />
+                    <circle cx="12" cy="12" r="1.75" />
+                    <circle cx="12" cy="19" r="1.75" />
+                  </svg>
+                </button>
+                {maximizedBodyMenuOpen ? (
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-10 mt-1 w-56 rounded-md border border-gray-200 bg-white py-2 text-sm shadow-lg"
+                  >
+                    {bodyContent.html && bodyContent.text ? (
+                      <div className="border-b border-gray-100 px-3 py-2">
+                        <p className="text-xs font-semibold text-gray-500">Ansicht</p>
+                        <div className="mt-1 flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setBodyMode("text")}
+                            className={`flex-1 rounded border px-2 py-1 text-xs ${
+                              bodyMode === "text"
+                                ? "border-gray-900 bg-gray-900 text-white"
+                                : "border-gray-300 text-gray-700"
+                            }`}
+                          >
+                            Text
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBodyMode("html")}
+                            className={`flex-1 rounded border px-2 py-1 text-xs ${
+                              bodyMode === "html"
+                                ? "border-gray-900 bg-gray-900 text-white"
+                                : "border-gray-300 text-gray-700"
+                            }`}
+                          >
+                            HTML
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="px-3 py-2">
+                      <p className="text-xs font-semibold text-gray-500">Druck</p>
+                      <select
+                        value={printMode}
+                        onChange={(e) => setPrintMode(e.target.value as "html" | "text")}
+                        className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                        title="Druckmodus"
+                      >
+                        <option value="html">Druck: HTML</option>
+                        <option value="text">Druck: Text</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMaximizedBodyMenuOpen(false);
+                          printSelectedEmail();
+                        }}
+                        className="mt-2 w-full rounded border border-gray-300 px-2 py-1.5 text-xs hover:bg-gray-50"
+                      >
+                        Drucken
+                      </button>
+                    </div>
                   </div>
                 ) : null}
-                <button
-                  onClick={() => printSelectedEmail()}
-                  className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  Drucken
-                </button>
-                <select
-                  value={printMode}
-                  onChange={(e) => setPrintMode(e.target.value as "html" | "text")}
-                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700"
-                  title="Druckmodus"
-                >
-                  <option value="html">HTML</option>
-                  <option value="text">Text</option>
-                </select>
-                <button
-                  onClick={() => setIsBodyMaximized(false)}
-                  aria-label="Schließen"
-                  className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  ✕
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMaximizedBodyMenuOpen(false);
+                  setIsBodyMaximized(false);
+                }}
+                aria-label="Schließen"
+                className="shrink-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                ✕
+              </button>
             </header>
-            <div className="flex-1 overflow-hidden p-2 md:p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-2 md:p-4">
               {bodyMode === "html" && bodyContent.html ? (
                 <iframe
+                  ref={mailBodyIframeRef}
                   title="Mailinhalt vergrößert"
                   sandbox=""
                   srcDoc={safeMailDocument}
                   referrerPolicy="no-referrer"
-                  className="h-full w-full rounded-lg border border-gray-100 bg-white"
+                  className="block w-full max-w-full rounded-lg border border-gray-100 bg-white"
+                  style={{ minHeight: "360px", height: "360px", border: "none" }}
                 />
               ) : (
-                <div className="h-full overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800">
+                <div className="min-h-[50vh] whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800">
                   {bodyContent.text ||
                     selectedEmail.textPreview ||
                     selectedEmail.snippet ||
