@@ -538,6 +538,7 @@ export function MailWorkspace() {
   const emailsNextCursorRef = useRef<string | null>(null);
   const emailsHasMoreRef = useRef(false);
   const isLoadingEmailsRef = useRef(false);
+  const activeLoadEmailRequestIdRef = useRef(0);
 
   // Three-column resizable layout (only takes effect on lg+; mobile keeps the
   // existing list/detail toggle). Initial values are static so SSR and the
@@ -886,6 +887,7 @@ export function MailWorkspace() {
   }
 
   async function loadEmail(id: string) {
+    const requestId = ++activeLoadEmailRequestIdRef.current;
     setIsLoadingDetail(true);
     setEmailDetailMenuOpen(false);
     setHoveredAttachmentPreview(null);
@@ -896,6 +898,9 @@ export function MailWorkspace() {
     setShowExternalImages(false);
     setIsLoadingBody(true);
     const res = await fetch(`/api/emails/${id}`);
+    if (requestId !== activeLoadEmailRequestIdRef.current) {
+      return;
+    }
     if (!res.ok) {
       setUiError("E-Mail konnte nicht geladen werden.");
       setSelectedEmail(null);
@@ -905,12 +910,18 @@ export function MailWorkspace() {
       return;
     }
     const data = await res.json();
+    if (requestId !== activeLoadEmailRequestIdRef.current) {
+      return;
+    }
     const emailData = data.email ?? null;
     setSelectedEmail(emailData);
     setMobileView("detail");
     setIsLoadingDetail(false);
     loadContactCandidates().catch(() => {});
     await loadBody(id);
+    if (requestId !== activeLoadEmailRequestIdRef.current) {
+      return;
+    }
     if (emailData && !(emailData.flags ?? []).includes("\\Seen")) {
       fetch(`/api/emails/${id}/mark-read`, { method: "POST" }).catch(() => {});
       setSelectedEmail((prev: Email | null) =>
@@ -949,8 +960,10 @@ export function MailWorkspace() {
         return loadBody(id, true);
       }
 
-      setBodyContent({ text, html });
-      setBodyMode(html ? "html" : text ? "text" : "text");
+      if (activeLoadEmailRequestIdRef.current > 0) {
+        setBodyContent({ text, html });
+        setBodyMode(html ? "html" : text ? "text" : "text");
+      }
     } catch (error) {
       setBodyError(error instanceof Error ? error.message : "Mailinhalt konnte nicht geladen werden.");
       setBodyContent(null);
@@ -1643,6 +1656,11 @@ export function MailWorkspace() {
     sort,
     mailScrollBatchSize,
   ]);
+
+  useEffect(() => {
+    // Invalidate in-flight detail fetches when the visible mail context changes.
+    activeLoadEmailRequestIdRef.current += 1;
+  }, [selectedAccountId, selectedFolderPath, query, tab, sort, hasAttachmentsFilter, actionRequiredFilter]);
 
   useEffect(() => {
     const root = listScrollRef.current;

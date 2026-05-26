@@ -1,14 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
+  const [hydrated, setHydrated] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,6 +44,13 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {!hydrated ? (
+          <div className="space-y-5" aria-busy="true" aria-live="polite">
+            <div className="glass-input h-11 w-full rounded-xl" />
+            <div className="glass-input h-11 w-full rounded-xl" />
+            <div className="glass-btn-primary h-11 w-full rounded-xl opacity-70" />
+          </div>
+        ) : (
         <form onSubmit={onSubmit} className="space-y-5">
           <div>
             <label className="mb-1.5 block text-sm font-medium glass-text-secondary">E-Mail</label>
@@ -74,6 +86,7 @@ export default function LoginPage() {
             {loading ? "Anmeldung..." : "Anmelden"}
           </button>
         </form>
+        )}
       </div>
     </main>
   );
