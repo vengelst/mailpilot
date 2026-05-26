@@ -372,6 +372,13 @@ function senderDisplayName(email: Pick<Email, "fromName" | "fromEmail">) {
   return (email.fromName && email.fromName.trim()) || email.fromEmail || "Unbekannt";
 }
 
+function folderDisplayName(path: string) {
+  const clean = path.trim().replace(/^\/+|\/+$/g, "");
+  if (!clean) return path;
+  const segments = clean.split(/[/.]/).filter(Boolean);
+  return segments[segments.length - 1] || clean;
+}
+
 function formatDateTimeShort(value: string | null | undefined) {
   if (!value) return "-";
   const d = new Date(value);
@@ -515,6 +522,7 @@ export function MailWorkspace() {
   });
   const [popupEmailId, setPopupEmailId] = useState<string | null>(null);
   const [pendingLinkUrl, setPendingLinkUrl] = useState<string | null>(null);
+  const [isManagingFolder, setIsManagingFolder] = useState(false);
   const composeEditorRef = useRef<HTMLDivElement | null>(null);
   const mailBodyIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -769,6 +777,97 @@ export function MailWorkspace() {
     if (typeof batch === "number" && Number.isFinite(batch)) {
       setMailScrollBatchSize(snapMailScrollBatchSize(batch));
     }
+  }
+
+  async function manageFolder(
+    action: "create" | "delete" | "rename" | "copy",
+    payload:
+      | { path: string }
+      | { fromPath: string; toPath: string },
+  ) {
+    if (!selectedAccountId) {
+      setUiError("Bitte zuerst ein Konto wählen.");
+      return;
+    }
+    setIsManagingFolder(true);
+    setUiError("");
+    setUiInfo("");
+    try {
+      const res = await fetch(`/api/accounts/${selectedAccountId}/folders/manage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      if (!res.ok) {
+        setUiError(await readErrorMessage(res, "Ordner-Aktion fehlgeschlagen."));
+        return;
+      }
+      const data = (await res.json()) as { folders?: Folder[] };
+      const nextFolders = data.folders ?? [];
+      setFolders(nextFolders);
+      if (action === "delete" && "path" in payload && selectedFolderPath === payload.path) {
+        setSelectedFolderPath(nextFolders[0]?.path ?? "");
+        setSelectedEmail(null);
+        setBodyContent(null);
+        setMobileView("list");
+      } else if ((action === "rename" || action === "copy") && "toPath" in payload) {
+        setSelectedFolderPath(payload.toPath);
+      } else if (action === "create" && "path" in payload) {
+        setSelectedFolderPath(payload.path);
+      }
+      await loadEmails();
+      const labels: Record<typeof action, string> = {
+        create: "Ordner angelegt",
+        delete: "Ordner gelöscht",
+        rename: "Ordner umbenannt",
+        copy: "Ordner kopiert",
+      };
+      setUiInfo(labels[action]);
+    } finally {
+      setIsManagingFolder(false);
+    }
+  }
+
+  function createFolderPrompt() {
+    const input = window.prompt("Neuen Ordnernamen eingeben (z. B. Kunden/2026):");
+    const path = input?.trim();
+    if (!path) return;
+    void manageFolder("create", { path });
+  }
+
+  function renameFolderPrompt() {
+    if (!selectedFolderPath) return;
+    const next = window.prompt(
+      `Neuen Namen/Pfad für "${selectedFolderPath}" eingeben:`,
+      selectedFolderPath,
+    );
+    const toPath = next?.trim();
+    if (!toPath || toPath === selectedFolderPath) return;
+    void manageFolder("rename", { fromPath: selectedFolderPath, toPath });
+  }
+
+  function copyFolderPrompt() {
+    if (!selectedFolderPath) return;
+    const defaultTarget = `${selectedFolderPath}_copy`;
+    const next = window.prompt(
+      `Zielordner für Kopie von "${selectedFolderPath}" eingeben:`,
+      defaultTarget,
+    );
+    const toPath = next?.trim();
+    if (!toPath || toPath === selectedFolderPath) return;
+    void manageFolder("copy", { fromPath: selectedFolderPath, toPath });
+  }
+
+  function deleteFolderPrompt() {
+    if (!selectedFolderPath) return;
+    if (
+      !window.confirm(
+        `Ordner "${selectedFolderPath}" wirklich löschen? Dies löscht den Ordner auf dem Mailserver.`,
+      )
+    ) {
+      return;
+    }
+    void manageFolder("delete", { path: selectedFolderPath });
   }
 
   function mailListSearchParams(cursor: string | null) {
@@ -2261,17 +2360,62 @@ export function MailWorkspace() {
               mobileView !== "list" ? "hidden lg:flex" : "flex"
             }`}
           >
-            <div className="flex items-center justify-between border-b glass-divider px-3 py-2">
-              <span className="text-xs font-semibold uppercase tracking-wide glass-text-muted">
-                Ordner
-              </span>
-              <button
-                onClick={() => void reloadFolders()}
-                className="text-xs glass-text-muted hover:opacity-80"
-                title="Ordner aktualisieren"
-              >
-                ↻
-              </button>
+            <div className="border-b glass-divider px-3 py-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide glass-text-muted">
+                  Ordner
+                </span>
+                <button
+                  onClick={() => void reloadFolders()}
+                  className="text-xs glass-text-muted hover:opacity-80"
+                  title="Ordner aktualisieren"
+                >
+                  ↻
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={createFolderPrompt}
+                  disabled={isManagingFolder || !selectedAccountId}
+                  className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
+                  title="Neuen Ordner erstellen"
+                >
+                  + Ordner
+                </button>
+                <button
+                  type="button"
+                  onClick={renameFolderPrompt}
+                  disabled={isManagingFolder || !selectedFolderPath}
+                  className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
+                  title="Ausgewählten Ordner umbenennen / verschieben"
+                >
+                  Umbenennen
+                </button>
+                <button
+                  type="button"
+                  onClick={copyFolderPrompt}
+                  disabled={isManagingFolder || !selectedFolderPath}
+                  className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
+                  title="Ausgewählten Ordner kopieren"
+                >
+                  Kopieren
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteFolderPrompt}
+                  disabled={isManagingFolder || !selectedFolderPath}
+                  className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
+                  title="Ausgewählten Ordner löschen"
+                >
+                  Löschen
+                </button>
+              </div>
+              {selectedFolderPath ? (
+                <p className="text-[11px] glass-text-muted truncate" title={selectedFolderPath}>
+                  Aktuell: {folderDisplayName(selectedFolderPath)}
+                </p>
+              ) : null}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto py-1 text-sm">
               {folders.length === 0 ? (
@@ -3121,7 +3265,7 @@ export function MailWorkspace() {
                       srcDoc={safeMailDocument}
                       referrerPolicy="no-referrer"
                       className="block w-full flex-1 rounded-xl glass"
-                      style={{ border: "none", maxWidth: "100%", minHeight: "480px" }}
+                      style={{ border: "none", maxWidth: "100%", minHeight: "480px", overflowX: "hidden" }}
                     />
                   </div>
                 ) : (

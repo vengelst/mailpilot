@@ -191,9 +191,14 @@ html{height:auto!important;max-height:none!important;overflow-x:hidden!important
 body{height:auto!important;max-height:none!important;min-height:min-content;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1e293b;margin:0;padding:12px;font-size:14px;line-height:1.6;box-sizing:border-box;word-wrap:break-word;overflow-wrap:break-word}
 *,*::before,*::after{box-sizing:inherit}
 img{max-width:100%!important;height:auto!important}
-table{max-width:100%!important;width:auto!important;table-layout:fixed!important}
-td,th{max-width:100%!important;word-wrap:break-word!important;overflow-wrap:break-word!important}
-div,section,article,header,footer,aside,main,nav{max-width:100%!important;overflow-x:hidden!important}
+table{max-width:100%!important;width:100%!important;table-layout:fixed!important}
+td,th{max-width:100%!important;word-wrap:break-word!important;overflow-wrap:anywhere!important;word-break:break-word!important}
+div,section,article,header,footer,aside,main,nav,p,span,a{max-width:100%!important;overflow-x:hidden!important;overflow-wrap:anywhere!important;word-break:break-word!important}
+a{word-break:break-all!important}
+iframe,video,object,embed{max-width:100%!important}
+a,button,input,textarea,select,[style*="width"]{max-width:100%!important}
+[style*="min-width"]{min-width:0!important}
+[width]{max-width:100%!important}
 a{color:#2563eb}
 a:hover{color:#1d4ed8}
 pre,code{max-width:100%!important;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word}

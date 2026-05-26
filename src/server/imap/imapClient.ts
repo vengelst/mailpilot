@@ -278,6 +278,72 @@ export async function listImapFolders(config: ImapAccountConfig): Promise<ImapFo
   }
 }
 
+export async function createImapFolder(
+  config: ImapAccountConfig,
+  folderPath: string,
+): Promise<void> {
+  const client = buildClient(config);
+  try {
+    await client.connect();
+    await client.mailboxCreate(folderPath);
+  } finally {
+    if (client.usable) {
+      await client.logout();
+    }
+  }
+}
+
+export async function deleteImapFolder(
+  config: ImapAccountConfig,
+  folderPath: string,
+): Promise<void> {
+  const client = buildClient(config);
+  try {
+    await client.connect();
+    await client.mailboxDelete(folderPath);
+  } finally {
+    if (client.usable) {
+      await client.logout();
+    }
+  }
+}
+
+export async function renameImapFolder(
+  config: ImapAccountConfig,
+  fromPath: string,
+  toPath: string,
+): Promise<void> {
+  const client = buildClient(config);
+  try {
+    await client.connect();
+    await client.mailboxRename(fromPath, toPath);
+  } finally {
+    if (client.usable) {
+      await client.logout();
+    }
+  }
+}
+
+export async function copyImapFolderMessages(
+  config: ImapAccountConfig,
+  sourcePath: string,
+  targetPath: string,
+): Promise<void> {
+  const client = buildClient(config);
+  try {
+    await client.connect();
+    const mailbox = await client.mailboxOpen(sourcePath);
+    const exists = mailbox.exists ?? 0;
+    if (exists > 0) {
+      await client.messageCopy("1:*", targetPath, { uid: false });
+    }
+  } finally {
+    if (client.usable) {
+      await client.logout();
+    }
+  }
+}
+
 export type ImapMailboxStatus = {
   uidValidity: bigint;
   uidNext: bigint;

@@ -1,6 +1,9 @@
 import { prisma } from "@/server/db/prisma";
 import { decryptSecret } from "@/server/security/crypto";
 import {
+  copyImapFolderMessages,
+  createImapFolder,
+  deleteImapFolder,
   downloadAttachmentPart,
   fetchFlagsByUidRange,
   fetchFolderMessagesPaged,
@@ -12,6 +15,7 @@ import {
   listImapFolders,
   moveMessage,
   moveMessageToSpecialFolder,
+  renameImapFolder,
   purgeFolderMessages,
   resolveUidByMessageId,
   searchUidBySubjectDate,
@@ -139,6 +143,87 @@ export async function syncFolders(accountId: string, userId: string) {
   );
 
   return folders;
+}
+
+function normalizeFolderPath(value: string) {
+  return value.trim().replace(/^\/+|\/+$/g, "");
+}
+
+async function assertFolderNotProtected(
+  folderPath: string,
+  kind: "delete" | "rename" | "copy",
+) {
+  const lower = folderPath.toLowerCase();
+  const protectedPaths = new Set(["inbox"]);
+  if (protectedPaths.has(lower)) {
+    throw new Error(`Ordner "${folderPath}" ist geschützt und kann nicht per ${kind} geändert werden.`);
+  }
+}
+
+export async function createFolderForAccount(input: {
+  accountId: string;
+  userId: string;
+  folderPath: string;
+}) {
+  const path = normalizeFolderPath(input.folderPath);
+  if (!path) throw new Error("Ordnername darf nicht leer sein.");
+  const { config } = await getAccountConfig(input.accountId, input.userId);
+  await createImapFolder(config, path);
+  return syncFolders(input.accountId, input.userId);
+}
+
+export async function deleteFolderForAccount(input: {
+  accountId: string;
+  userId: string;
+  folderPath: string;
+}) {
+  const path = normalizeFolderPath(input.folderPath);
+  if (!path) throw new Error("Ordnername darf nicht leer sein.");
+  await assertFolderNotProtected(path, "delete");
+  const { config } = await getAccountConfig(input.accountId, input.userId);
+  await deleteImapFolder(config, path);
+  await prisma.emailIndex.deleteMany({ where: { accountId: input.accountId, folderPath: path } });
+  await prisma.mailFolder.deleteMany({ where: { accountId: input.accountId, path } });
+  return syncFolders(input.accountId, input.userId);
+}
+
+export async function renameFolderForAccount(input: {
+  accountId: string;
+  userId: string;
+  fromPath: string;
+  toPath: string;
+}) {
+  const fromPath = normalizeFolderPath(input.fromPath);
+  const toPath = normalizeFolderPath(input.toPath);
+  if (!fromPath || !toPath) throw new Error("Quell- und Zielordner sind erforderlich.");
+  await assertFolderNotProtected(fromPath, "rename");
+  const { config } = await getAccountConfig(input.accountId, input.userId);
+  await renameImapFolder(config, fromPath, toPath);
+  await prisma.emailIndex.updateMany({
+    where: { accountId: input.accountId, folderPath: fromPath },
+    data: { folderPath: toPath },
+  });
+  await prisma.mailFolder.updateMany({
+    where: { accountId: input.accountId, path: fromPath },
+    data: { path: toPath, displayName: toPath },
+  });
+  return syncFolders(input.accountId, input.userId);
+}
+
+export async function copyFolderForAccount(input: {
+  accountId: string;
+  userId: string;
+  fromPath: string;
+  toPath: string;
+}) {
+  const fromPath = normalizeFolderPath(input.fromPath);
+  const toPath = normalizeFolderPath(input.toPath);
+  if (!fromPath || !toPath) throw new Error("Quell- und Zielordner sind erforderlich.");
+  await assertFolderNotProtected(fromPath, "copy");
+  const { config } = await getAccountConfig(input.accountId, input.userId);
+  await createImapFolder(config, toPath);
+  await copyImapFolderMessages(config, fromPath, toPath);
+  return syncFolders(input.accountId, input.userId);
 }
 
 async function upsertFetchedMessages(
