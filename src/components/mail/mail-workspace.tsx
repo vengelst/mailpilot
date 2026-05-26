@@ -2356,7 +2356,7 @@ export function MailWorkspace() {
       >
         {foldersOpen ? (
           <aside
-            className={`glass flex max-h-[50dvh] min-h-0 shrink-0 flex-col border-r-0 lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 ${
+            className={`glass flex max-h-[50dvh] min-h-0 min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 ${
               mobileView !== "list" ? "hidden lg:flex" : "flex"
             }`}
           >
@@ -2417,7 +2417,7 @@ export function MailWorkspace() {
                 </p>
               ) : null}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto py-1 text-sm">
+            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto py-1 text-sm">
               {folders.length === 0 ? (
                 <p className="px-3 py-2 text-xs glass-text-muted">
                   {selectedAccountId ? "Lade Ordner..." : "Kein Konto gewählt."}
@@ -2468,7 +2468,7 @@ export function MailWorkspace() {
         ) : null}
 
         <section
-          className={`glass-subtle flex min-h-0 flex-1 flex-col border-r-0 lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 ${
+          className={`glass-subtle flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 ${
             mobileView === "detail" ? "hidden lg:flex" : "flex"
           }`}
         >
@@ -2629,7 +2629,7 @@ export function MailWorkspace() {
 
           <div
             ref={listScrollRef}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
           >
             {isLoadingEmails ? (
               <p className="px-4 py-3 text-sm glass-text-secondary">Lade E-Mails...</p>
@@ -2639,7 +2639,7 @@ export function MailWorkspace() {
                 Keine E-Mails für die aktuellen Filter.
               </p>
             ) : null}
-            <ul className="divide-y glass-divider">
+            <ul className="divide-y glass-divider overflow-x-hidden">
               {emails.map((email) => {
                 const unread = isUnread(email);
                 const sender = senderDisplayName(email);
@@ -2659,10 +2659,10 @@ export function MailWorkspace() {
                 const visibleAttachmentNames = attachmentNames.slice(0, 2);
                 const hiddenAttachmentNames = Math.max(0, attachmentCount - visibleAttachmentNames.length);
                 return (
-                  <li key={email.id}>
+                  <li key={email.id} className="min-w-0 overflow-x-hidden">
                     <div
                       onContextMenu={(e) => openMailContextMenu(e, email)}
-                      className={`flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-all ${
+                      className={`flex w-full min-w-0 items-start gap-2 overflow-hidden rounded-xl px-2 py-2 text-left transition-all ${
                         isSelected || isChecked
                           ? "glass-selected border-2"
                           : "border-2 border-transparent hover:bg-white/40"
@@ -2685,7 +2685,7 @@ export function MailWorkspace() {
                           e.preventDefault();
                           setPopupEmailId(email.id);
                         }}
-                        className="flex flex-1 items-start gap-3 text-left"
+                        className="flex min-w-0 flex-1 items-start gap-3 overflow-hidden text-left"
                       >
                       <span className="mt-0.5 flex shrink-0 flex-col items-center gap-1">
                         <span
