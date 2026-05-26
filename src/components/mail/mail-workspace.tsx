@@ -98,6 +98,16 @@ type Folder = {
   specialUse?: string;
   unreadCount?: number;
   totalCount?: number;
+  existsCount?: number;
+};
+
+type AutomationRunSummary = {
+  id: string;
+  type: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string | null;
+  error?: string | null;
 };
 
 type FolderTreeNode = {
@@ -453,6 +463,56 @@ function stripHtml(value: string) {
   return (container.textContent || container.innerText || "").trim();
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatRelative(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.round(Math.abs(diffMs) / 60000);
+  if (diffMin < 1) return "gerade eben";
+  if (diffMin < 60) return `vor ${diffMin} min`;
+  const diffHours = Math.round(diffMin / 60);
+  if (diffHours < 24) return `vor ${diffHours} h`;
+  const diffDays = Math.round(diffHours / 24);
+  return `vor ${diffDays} d`;
+}
+
+function formatStatusBadge(status: string | null | undefined) {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized === "success") {
+    return {
+      label: "Erfolg",
+      className: "border-emerald-500/35 bg-emerald-500/15 text-emerald-700",
+    };
+  }
+  if (normalized === "running") {
+    return {
+      label: "Läuft",
+      className: "border-amber-500/35 bg-amber-500/15 text-amber-700",
+    };
+  }
+  if (normalized === "failed") {
+    return {
+      label: "Fehler",
+      className: "border-red-500/35 bg-red-500/15 text-red-700",
+    };
+  }
+  return {
+    label: status || "Unbekannt",
+    className: "border-slate-400/35 bg-slate-500/10 glass-text-secondary",
+  };
+}
+
 export function MailWorkspace() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -474,6 +534,12 @@ export function MailWorkspace() {
     | {
         kind: "incremental" | "full" | "all_folders";
         label: string;
+        totalMails?: number;
+        processedMails?: number;
+        remainingMails?: number;
+        etaSeconds?: number | null;
+        isEstimate?: boolean;
+        lastFolderPath?: string | null;
       }
     | null
   >(null);
@@ -509,6 +575,12 @@ export function MailWorkspace() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showSyncMenu, setShowSyncMenu] = useState(false);
   const [newMailCheckIntervalMinutes, setNewMailCheckIntervalMinutes] = useState(30);
+  const [runOnAppStart, setRunOnAppStart] = useState(false);
+  const [automationRuns, setAutomationRuns] = useState<AutomationRunSummary[]>([]);
+  const [automationDashboardOpen, setAutomationDashboardOpen] = useState(false);
+  const [automationLoading, setAutomationLoading] = useState(false);
+  const [automationSaving, setAutomationSaving] = useState(false);
+  const [automationRunningNow, setAutomationRunningNow] = useState(false);
   const [mailScrollBatchSize, setMailScrollBatchSize] =
     useState<MailScrollBatchOption>(DEFAULT_MAIL_SCROLL_BATCH);
   const [mailContextMenu, setMailContextMenu] = useState<MailContextMenuState | null>(null);
@@ -539,6 +611,8 @@ export function MailWorkspace() {
     sendAtLocal: "",
   });
   const autoCheckInFlightRef = useRef(false);
+  const syncAllProgressPollRef = useRef<number | null>(null);
+  const automationRefreshRef = useRef<number | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
@@ -591,6 +665,13 @@ export function MailWorkspace() {
     () => folders.find((f) => f.path === selectedFolderPath) ?? null,
     [folders, selectedFolderPath],
   );
+  const latestAutomationRun = automationRuns[0] ?? null;
+  const nextScheduledRunAt = useMemo(() => {
+    if (!latestAutomationRun?.startedAt) return null;
+    const base = new Date(latestAutomationRun.startedAt).getTime();
+    if (!Number.isFinite(base)) return null;
+    return new Date(base + Math.max(5, Math.round(newMailCheckIntervalMinutes)) * 60 * 1000).toISOString();
+  }, [latestAutomationRun?.startedAt, newMailCheckIntervalMinutes]);
   // Detect Trash/Spam locally so we can show the "Leeren" button — the server
   // does its own classification before actually purging.
   const folderEmptyKind: "trash" | "spam" | null = useMemo(() => {
@@ -767,8 +848,16 @@ export function MailWorkspace() {
     const res = await fetch("/api/automation/settings");
     if (!res.ok) return;
     const data = (await res.json()) as {
-      settings?: { runIntervalMinutes?: number; mailScrollBatchSize?: number };
+      settings?: {
+        runOnAppStart?: boolean;
+        runIntervalMinutes?: number;
+        mailScrollBatchSize?: number;
+      };
     };
+    const runOnStart = data.settings?.runOnAppStart;
+    if (typeof runOnStart === "boolean") {
+      setRunOnAppStart(runOnStart);
+    }
     const interval = data.settings?.runIntervalMinutes;
     if (typeof interval === "number" && Number.isFinite(interval) && interval >= 5) {
       setNewMailCheckIntervalMinutes(interval);
@@ -776,6 +865,68 @@ export function MailWorkspace() {
     const batch = data.settings?.mailScrollBatchSize;
     if (typeof batch === "number" && Number.isFinite(batch)) {
       setMailScrollBatchSize(snapMailScrollBatchSize(batch));
+    }
+  }
+
+  async function loadAutomationRuns() {
+    const res = await fetch("/api/automation/runs");
+    if (!res.ok) return;
+    const data = (await res.json()) as { runs?: AutomationRunSummary[] };
+    const nextRuns = (data.runs ?? []).slice(0, 5);
+    setAutomationRuns(nextRuns);
+  }
+
+  async function saveAutomationDashboardSettings(patch: {
+    runOnAppStart?: boolean;
+    runIntervalMinutes?: number;
+  }) {
+    setAutomationSaving(true);
+    try {
+      const res = await fetch("/api/automation/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        setUiError(await readErrorMessage(res, "Auto-Update-Einstellungen konnten nicht gespeichert werden."));
+        return false;
+      }
+      const data = (await res.json()) as {
+        settings?: { runOnAppStart?: boolean; runIntervalMinutes?: number };
+      };
+      if (typeof data.settings?.runOnAppStart === "boolean") {
+        setRunOnAppStart(data.settings.runOnAppStart);
+      }
+      if (
+        typeof data.settings?.runIntervalMinutes === "number" &&
+        Number.isFinite(data.settings.runIntervalMinutes)
+      ) {
+        setNewMailCheckIntervalMinutes(Math.max(5, Math.round(data.settings.runIntervalMinutes)));
+      }
+      setUiInfo("Auto-Update-Einstellungen gespeichert.");
+      return true;
+    } finally {
+      setAutomationSaving(false);
+    }
+  }
+
+  async function runAutomationNow() {
+    if (!selectedAccountId) return;
+    setAutomationRunningNow(true);
+    try {
+      const res = await fetch("/api/automation/run-now", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "full", accountId: selectedAccountId }),
+      });
+      if (!res.ok) {
+        setUiError(await readErrorMessage(res, "Auto-Update konnte nicht gestartet werden."));
+        return;
+      }
+      setUiInfo("Auto-Update wurde gestartet.");
+      await Promise.all([loadAutomationRuns(), loadEmails(), reloadFolders()]);
+    } finally {
+      setAutomationRunningNow(false);
     }
   }
 
@@ -1088,10 +1239,69 @@ export function MailWorkspace() {
       setIsSyncing(true);
       setSyncProgress({
         kind: "all_folders",
-        label: "Synchronisiere alle Ordner …",
+        label: "Synchronisiere alle Ordner (Delta) …",
+        totalMails: 0,
+        processedMails: 0,
+        remainingMails: 0,
+        etaSeconds: null,
+        isEstimate: true,
+        lastFolderPath: null,
       });
       setUiInfo("");
       setUiError("");
+      if (typeof window !== "undefined" && syncAllProgressPollRef.current !== null) {
+        window.clearInterval(syncAllProgressPollRef.current);
+        syncAllProgressPollRef.current = null;
+      }
+      if (typeof window !== "undefined") {
+        syncAllProgressPollRef.current = window.setInterval(() => {
+          void (async () => {
+            try {
+              const progressRes = await fetch(
+                `/api/accounts/${selectedAccountId}/sync-all-folders?request=progress`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ mode: "incremental" }),
+                },
+              );
+              if (!progressRes.ok) return;
+              const payload = (await progressRes.json()) as {
+                progress?: {
+                  totalMails?: number;
+                  processedMails?: number;
+                  remainingMails?: number;
+                  etaSeconds?: number | null;
+                  isEstimate?: boolean;
+                  phase?: "preparing" | "running" | "finished" | "failed";
+                  lastFolderPath?: string | null;
+                } | null;
+              };
+              const progress = payload.progress;
+              if (!progress) return;
+              setSyncProgress((prev) => {
+                if (!prev || prev.kind !== "all_folders") return prev;
+                const phaseLabel =
+                  progress.phase === "preparing"
+                    ? "Synchronisation wird vorbereitet …"
+                    : "Synchronisiere alle Ordner (Delta) …";
+                return {
+                  ...prev,
+                  label: phaseLabel,
+                  totalMails: progress.totalMails ?? prev.totalMails,
+                  processedMails: progress.processedMails ?? prev.processedMails,
+                  remainingMails: progress.remainingMails ?? prev.remainingMails,
+                  etaSeconds: progress.etaSeconds ?? null,
+                  isEstimate: progress.isEstimate ?? prev.isEstimate,
+                  lastFolderPath: progress.lastFolderPath ?? null,
+                };
+              });
+            } catch {
+              // ignore polling hiccups while sync is running
+            }
+          })();
+        }, 1200);
+      }
       const res = await fetch(`/api/accounts/${selectedAccountId}/sync-all-folders`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1120,88 +1330,17 @@ export function MailWorkspace() {
       await loadEmails();
       await reloadFolders();
     } finally {
-      setSyncProgress(null);
-      setIsSyncing(false);
-    }
-  }
-
-  async function syncCurrentFolder(
-    mode: "incremental" | "full" = "incremental",
-    reason: "general" | "attachments" = "general",
-  ) {
-    if (!selectedAccountId || !selectedFolderPath) return;
-    if (
-      mode === "full" &&
-      !window.confirm(
-        reason === "attachments"
-          ? "Anhang-Daten werden durch einen Vollsync des aktuellen Ordners neu eingelesen (Dateiname, Dateityp, Part-ID, Größe). Bei großen Ordnern kann das dauern. Fortfahren?"
-          : "Vollsync indexiert den gesamten aktuellen Ordner neu vom IMAP-Server. Bei großen Ordnern kann das deutlich länger dauern. Fortfahren?",
-      )
-    ) {
-      return;
-    }
-    try {
-      setIsSyncing(true);
-      setSyncProgress({
-        kind: mode === "full" ? "full" : "incremental",
-        label:
-          mode === "full"
-            ? "Vollsync des aktuellen Ordners läuft …"
-            : "Synchronisiere aktuellen Ordner …",
-      });
-      setUiInfo("");
-      setUiError("");
-      const res = await fetch(`/api/accounts/${selectedAccountId}/sync`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ folderPath: selectedFolderPath, mode }),
-      });
-      if (res.status === 409) {
-        setUiError(
-          "Es läuft bereits eine Synchronisierung für diesen Ordner. Bitte einen Moment warten.",
-        );
-        return;
+      if (typeof window !== "undefined" && syncAllProgressPollRef.current !== null) {
+        window.clearInterval(syncAllProgressPollRef.current);
+        syncAllProgressPollRef.current = null;
       }
-      if (!res.ok) {
-        setUiError(await readErrorMessage(res, "Synchronisierung fehlgeschlagen."));
-        return;
-      }
-      const data = (await res.json()) as {
-        mode: "incremental" | "full";
-        newMails: number;
-        flagsUpdated: number;
-        removedFromIndex?: number;
-        uidValidityChanged: boolean;
-      };
-      const removedSuffix =
-        data.removedFromIndex && data.removedFromIndex > 0
-          ? `, ${data.removedFromIndex} aus Index entfernt`
-          : "";
-      const summary =
-        data.mode === "full"
-          ? `Vollsync: ${data.newMails} Mails komplett neu indiziert.`
-          : data.uidValidityChanged
-            ? `Inkrementeller Sync: Ordner-UID hat sich geändert, ${data.newMails} Mails neu indiziert.`
-            : `Inkrementeller Sync: ${data.newMails} neue Mails, ${data.flagsUpdated} Flag-Änderungen${removedSuffix}.`;
-      setUiError("");
-      setUiInfo(
-        reason === "attachments" && data.mode === "full"
-          ? `${summary} Anhang-Metadaten wurden dabei neu eingelesen.`
-          : summary,
-      );
-      await loadEmails();
-      await reloadFolders();
-      if (selectedEmail?.id) {
-        await loadEmail(selectedEmail.id);
-      }
-    } finally {
       setSyncProgress(null);
       setIsSyncing(false);
     }
   }
 
   async function checkNow() {
-    await syncCurrentFolder("incremental");
+    await syncAllFolders();
   }
 
   async function runBulk(
@@ -1672,6 +1811,42 @@ export function MailWorkspace() {
   }, []);
 
   useEffect(() => {
+    if (!automationDashboardOpen) return;
+    let cancelled = false;
+    setAutomationLoading(true);
+    void (async () => {
+      try {
+        await Promise.all([loadAutomationSettings(), loadAutomationRuns()]);
+      } finally {
+        if (!cancelled) setAutomationLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [automationDashboardOpen]);
+
+  useEffect(() => {
+    if (!automationDashboardOpen) return;
+    if (typeof window === "undefined") return;
+    if (automationRefreshRef.current !== null) {
+      window.clearInterval(automationRefreshRef.current);
+      automationRefreshRef.current = null;
+    }
+    automationRefreshRef.current = window.setInterval(() => {
+      void loadAutomationRuns();
+    }, 15000);
+    return () => {
+      if (automationRefreshRef.current !== null) {
+        window.clearInterval(automationRefreshRef.current);
+        automationRefreshRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [automationDashboardOpen]);
+
+  useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.data?.type === "mailpilot-link-click" && typeof e.data.href === "string") {
         const href: string = e.data.href;
@@ -1785,6 +1960,19 @@ export function MailWorkspace() {
   }, [selectedAccountId, selectedFolderPath, tab, query, hasAttachmentsFilter, actionRequiredFilter]);
 
   // Close the sync dropdown on Escape or when clicking elsewhere.
+  useEffect(() => {
+    return () => {
+      if (syncAllProgressPollRef.current !== null) {
+        window.clearInterval(syncAllProgressPollRef.current);
+        syncAllProgressPollRef.current = null;
+      }
+      if (automationRefreshRef.current !== null) {
+        window.clearInterval(automationRefreshRef.current);
+        automationRefreshRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!showSyncMenu) return;
     function onKey(e: KeyboardEvent) {
@@ -1903,7 +2091,7 @@ export function MailWorkspace() {
   }, [safeMailDocument, bodyMode, selectedEmail?.id]);
 
   useEffect(() => {
-    if (!selectedAccountId || !selectedFolderPath) return;
+    if (!selectedAccountId) return;
     const intervalMs = Math.max(5, newMailCheckIntervalMinutes) * 60 * 1000;
     const timer = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
@@ -1911,10 +2099,10 @@ export function MailWorkspace() {
       autoCheckInFlightRef.current = true;
       void (async () => {
         try {
-          const res = await fetch(`/api/accounts/${selectedAccountId}/sync`, {
+          const res = await fetch(`/api/accounts/${selectedAccountId}/sync-all-folders`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ folderPath: selectedFolderPath, mode: "incremental" }),
+            body: JSON.stringify({ mode: "incremental" }),
           });
           if (res.ok) {
             await loadEmails();
@@ -1927,7 +2115,7 @@ export function MailWorkspace() {
     }, intervalMs);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAccountId, selectedFolderPath, newMailCheckIntervalMinutes, isSyncing]);
+  }, [selectedAccountId, newMailCheckIntervalMinutes, isSyncing]);
 
   useEffect(() => {
     if (!composeOpen || !composeEditorRef.current) return;
@@ -2191,77 +2379,42 @@ export function MailWorkspace() {
                 role="menuitem"
                 onClick={() => {
                   setShowSyncMenu(false);
-                  void syncCurrentFolder("incremental");
-                }}
-                disabled={isSyncing || !selectedAccountId || !selectedFolderPath}
-                className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
-              >
-                <span className="font-medium glass-text-primary">
-                  Aktuellen Ordner synchronisieren
-                </span>
-                <span className="block text-xs glass-text-tertiary">
-                  Nur neue Mails und Statusänderungen laden
-                </span>
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setShowSyncMenu(false);
-                  void syncCurrentFolder("full");
-                }}
-                disabled={isSyncing || !selectedAccountId || !selectedFolderPath}
-                className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
-              >
-                <span className="font-medium glass-text-primary">
-                  Aktuellen Ordner vollständig neu indexieren
-                </span>
-                <span className="block text-xs glass-text-tertiary">
-                  Vollsync — kann länger dauern, fragt vor dem Start nach Bestätigung
-                </span>
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setShowSyncMenu(false);
-                  void syncCurrentFolder("full", "attachments");
-                }}
-                disabled={isSyncing || !selectedAccountId || !selectedFolderPath}
-                className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
-              >
-                <span className="font-medium glass-text-primary">
-                  Anhang-Daten neu einlesen (aktueller Ordner)
-                </span>
-                <span className="block text-xs glass-text-tertiary">
-                  Nutzt Vollsync, um Dateiname/Typ/Größe/Part-ID für bestehende Mails zu aktualisieren
-                </span>
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setShowSyncMenu(false);
                   void syncAllFolders();
                 }}
                 disabled={isSyncing || !selectedAccountId}
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
+                className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
               >
                 <span className="font-medium glass-text-primary">
-                  Alle Ordner synchronisieren
+                  Delta-Sync (alle Ordner)
                 </span>
                 <span className="block text-xs glass-text-tertiary">
-                  Lädt Header und Zähler aller Ordner und Unterordner
+                  Standard: kontoweit über alle Verzeichnisse, inkl. Fortschritt + ETA
                 </span>
               </button>
+              <div className="px-3 py-2 text-xs glass-text-tertiary">
+                Vollabgleich startet nicht automatisch und kann bei Bedarf später manuell ergänzt werden.
+              </div>
             </div>
           ) : null}
         </div>
         <button
           type="button"
           onClick={() => void checkNow()}
-          disabled={isSyncing || !selectedAccountId || !selectedFolderPath}
+          disabled={isSyncing || !selectedAccountId}
           className="glass-btn rounded-lg px-3 py-1.5 text-sm disabled:opacity-50"
-          title={`Sofort auf neue Mails pruefen (Intervall: ${newMailCheckIntervalMinutes} Min.)`}
+          title={`Sofort Delta-Sync für alle Ordner starten (Intervall: ${newMailCheckIntervalMinutes} Min.)`}
         >
           Check jetzt
+        </button>
+        <button
+          type="button"
+          onClick={() => setAutomationDashboardOpen((v) => !v)}
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm"
+          aria-expanded={automationDashboardOpen}
+          aria-controls="mailpilot-automation-dashboard"
+          title="Auto-Update Dashboard"
+        >
+          Auto-Update
         </button>
         <a
           href="/search"
@@ -2322,14 +2475,49 @@ export function MailWorkspace() {
         >
           <div className="flex items-center gap-3">
             <span className="text-xs">{syncProgress.label}</span>
+            {syncProgress.kind === "all_folders" &&
+            typeof syncProgress.totalMails === "number" &&
+            typeof syncProgress.remainingMails === "number" ? (
+              <span className="text-xs glass-text-tertiary">
+                Gesamt: {syncProgress.totalMails} · Verbleibend: {syncProgress.remainingMails}
+                {syncProgress.isEstimate ? " (Schätzung)" : ""}
+                {typeof syncProgress.etaSeconds === "number"
+                  ? ` · ETA ~ ${Math.max(1, Math.round(syncProgress.etaSeconds / 60))} min`
+                  : ""}
+              </span>
+            ) : null}
           </div>
+          {syncProgress.kind === "all_folders" && syncProgress.lastFolderPath ? (
+            <p className="mt-1 truncate text-[11px] glass-text-tertiary" title={syncProgress.lastFolderPath}>
+              Ordner: {folderDisplayName(syncProgress.lastFolderPath)}
+            </p>
+          ) : null}
           <div
             className="mt-1 h-1 w-full overflow-hidden rounded-full bg-blue-200/40"
             role="progressbar"
             aria-label={syncProgress.label}
-            aria-valuetext="läuft"
+            aria-valuetext={
+              syncProgress.kind === "all_folders" && typeof syncProgress.remainingMails === "number"
+                ? `${syncProgress.remainingMails} verbleibend`
+                : "läuft"
+            }
           >
-            <div className="mailpilot-progress-bar h-full w-1/3 rounded-full bg-blue-500" />
+            {syncProgress.kind === "all_folders" &&
+            typeof syncProgress.totalMails === "number" &&
+            syncProgress.totalMails > 0 &&
+            typeof syncProgress.processedMails === "number" ? (
+              <div
+                className="h-full rounded-full bg-blue-500 transition-[width] duration-700 ease-out"
+                style={{
+                  width: `${Math.max(
+                    2,
+                    Math.min(100, (syncProgress.processedMails / syncProgress.totalMails) * 100),
+                  )}%`,
+                }}
+              />
+            ) : (
+              <div className="mailpilot-progress-bar h-full w-1/3 rounded-full bg-blue-500" />
+            )}
           </div>
         </div>
       ) : null}
@@ -2343,6 +2531,164 @@ export function MailWorkspace() {
         <p className="glass-info px-4 py-2 text-sm">
           {uiInfo}
         </p>
+      ) : null}
+
+      {automationDashboardOpen ? (
+        <section
+          id="mailpilot-automation-dashboard"
+          className="glass-subtle border-b glass-divider px-4 py-3"
+          aria-live="polite"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold glass-text-primary">Auto-Update Dashboard</h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void runAutomationNow()}
+                disabled={automationRunningNow || automationLoading || !selectedAccountId}
+                className="glass-btn rounded-lg px-2.5 py-1 text-xs disabled:opacity-50"
+              >
+                {automationRunningNow ? "Läuft …" : "Jetzt ausführen"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAutomationLoading(true);
+                  void (async () => {
+                    try {
+                      await Promise.all([loadAutomationSettings(), loadAutomationRuns()]);
+                    } finally {
+                      setAutomationLoading(false);
+                    }
+                  })();
+                }}
+                disabled={automationLoading}
+                className="glass-btn rounded-lg px-2.5 py-1 text-xs disabled:opacity-50"
+              >
+                Aktualisieren
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            <article className="glass rounded-xl p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Status</p>
+              <p className="mt-1 text-sm glass-text-primary">
+                {runOnAppStart ? "Aktiv beim App-Start" : "Nur nach Intervall / manuell"}
+              </p>
+              <p className="mt-1 text-xs glass-text-tertiary">
+                Intervall: alle {Math.max(5, Math.round(newMailCheckIntervalMinutes))} Minuten
+              </p>
+              <p className="mt-1 text-xs glass-text-tertiary">
+                Nächster Lauf: {formatDateTime(nextScheduledRunAt)}
+              </p>
+            </article>
+
+            <article className="glass rounded-xl p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Zeitplan</p>
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-xs glass-text-tertiary" htmlFor="automation-interval-input">
+                  Intervall
+                </label>
+                <input
+                  id="automation-interval-input"
+                  type="number"
+                  min={5}
+                  max={1440}
+                  step={5}
+                  value={newMailCheckIntervalMinutes}
+                  onChange={(e) => setNewMailCheckIntervalMinutes(Math.max(5, Number(e.target.value) || 5))}
+                  className="glass-input w-24 rounded-lg px-2 py-1 text-xs"
+                />
+                <span className="text-xs glass-text-tertiary">min</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void saveAutomationDashboardSettings({
+                      runIntervalMinutes: Math.max(5, Math.round(newMailCheckIntervalMinutes)),
+                    })
+                  }
+                  disabled={automationSaving}
+                  className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
+                >
+                  Speichern
+                </button>
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-xs glass-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={runOnAppStart}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setRunOnAppStart(checked);
+                    void saveAutomationDashboardSettings({ runOnAppStart: checked });
+                  }}
+                />
+                Beim App-Start automatisch prüfen
+              </label>
+            </article>
+
+            <article className="glass rounded-xl p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Letzter Lauf</p>
+              {automationRuns.length > 0 ? (
+                <>
+                  <p className="mt-1 text-sm glass-text-primary">
+                    {formatDateTime(automationRuns[0]?.startedAt)} ({formatRelative(automationRuns[0]?.startedAt)})
+                  </p>
+                  <span
+                    className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                      formatStatusBadge(automationRuns[0]?.status).className
+                    }`}
+                  >
+                    {formatStatusBadge(automationRuns[0]?.status).label}
+                  </span>
+                </>
+              ) : (
+                <p className="mt-1 text-xs glass-text-tertiary">Noch keine Laufdaten vorhanden.</p>
+              )}
+            </article>
+          </div>
+
+          <div className="mt-3 glass rounded-xl p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Letzte Läufe</p>
+            {automationLoading ? (
+              <p className="mt-2 text-xs glass-text-tertiary">Lade Laufhistorie …</p>
+            ) : automationRuns.length === 0 ? (
+              <p className="mt-2 text-xs glass-text-tertiary">Keine Läufe gefunden.</p>
+            ) : (
+              <ul className="mt-2 space-y-1">
+                {automationRuns.map((run) => {
+                  const hasError = Boolean(run.error);
+                  return (
+                    <li
+                      key={run.id}
+                      className={`rounded-lg border px-2 py-1 text-xs ${
+                        hasError ? "border-red-400/40 bg-red-500/10" : "border-white/30 bg-white/10"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          {run.type} · {run.status}
+                        </span>
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                              formatStatusBadge(run.status).className
+                            }`}
+                          >
+                            {formatStatusBadge(run.status).label}
+                          </span>
+                          <span className="glass-text-tertiary">{formatDateTime(run.startedAt)}</span>
+                        </span>
+                      </div>
+                      {hasError ? <p className="mt-1 text-red-700">{run.error}</p> : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
       ) : null}
 
       <div

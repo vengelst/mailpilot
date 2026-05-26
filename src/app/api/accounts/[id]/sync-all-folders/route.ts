@@ -13,6 +13,12 @@ import { runSpamCheckJob } from "@/server/automation/spamCheckJob";
 import { runBlockedSenderJob } from "@/server/automation/blockedSenderJob";
 import { runRulesEngineBatchJob } from "@/server/automation/rulesEngineJob";
 import { getOrCreateAutomationSettings } from "@/server/automation/settings";
+import {
+  finishSyncAllProgress,
+  getSyncAllProgress,
+  startSyncAllProgress,
+  updateSyncAllProgress,
+} from "@/server/automation/syncAllProgress";
 
 /**
  * Header-only sync across the whole IMAP folder tree.
@@ -46,12 +52,21 @@ export async function POST(
     accountId = await resolveId(context.params);
     const payload = schema.parse(await req.json().catch(() => ({})));
     const mode = payload.mode ?? "incremental";
+    const requestType = req.nextUrl.searchParams.get("request");
 
     const account = await prisma.mailAccount.findFirst({
       where: { id: accountId, userId: session.userId },
       select: { id: true },
     });
     if (!account) return fail("Account not found", 404);
+
+    if (requestType === "progress") {
+      const progress = getSyncAllProgress(session.userId, accountId);
+      if (!progress) {
+        return ok({ progress: null });
+      }
+      return ok({ progress });
+    }
 
     await writeAuditLog({
       userId: session.userId,
@@ -61,7 +76,39 @@ export async function POST(
       afterJson: { accountId, mode },
     });
 
+    startSyncAllProgress({
+      userId: session.userId,
+      accountId,
+      mode,
+      message: "Ordner werden geladen …",
+    });
+
     const folders = await syncFolders(accountId, session.userId);
+    const folderRows = await prisma.mailFolder.findMany({
+      where: { accountId },
+      select: { path: true, existsCount: true },
+    });
+    const existsCountByPath = new Map<string, number>(
+      folderRows.map((row) => [row.path, Math.max(0, row.existsCount ?? 0)]),
+    );
+    const folderEstimateByPath = new Map<string, number>(
+      folders.map((folder) => [folder.path, existsCountByPath.get(folder.path) ?? 0]),
+    );
+    const totalMails = Array.from(folderEstimateByPath.values()).reduce(
+      (sum, folderEstimate) => sum + folderEstimate,
+      0,
+    );
+    let processedMailsEstimate = 0;
+    updateSyncAllProgress(session.userId, accountId, {
+      phase: "running",
+      folderTotal: folders.length,
+      folderDone: 0,
+      totalMails,
+      processedMails: 0,
+      remainingMails: totalMails,
+      isEstimate: true,
+      message: "Synchronisation gestartet",
+    });
 
     let totalNew = 0;
     let totalFlagsUpdated = 0;
@@ -90,7 +137,12 @@ export async function POST(
     }> = [];
 
     for (const folder of folders) {
+      const folderEstimate = folderEstimateByPath.get(folder.path) ?? 0;
       try {
+        updateSyncAllProgress(session.userId, accountId, {
+          lastFolderPath: folder.path,
+          message: `Synchronisiere ${folder.path}`,
+        });
         // sync-all-folders intentionally only does header-level incremental
         // even when mode === "full" — a true paged-fullsync per folder for
         // every folder would be too expensive for an "alle Ordner" click.
@@ -152,25 +204,31 @@ export async function POST(
             appliedRules: 0,
             skipped: "busy",
           });
-          continue;
+        } else {
+          const message = error instanceof Error ? error.message : "sync failed";
+          perFolder.push({
+            folderPath: folder.path,
+            newMails: 0,
+            flagsUpdated: 0,
+            removedFromIndex: 0,
+            uidValidityChanged: false,
+            spamFlagged: 0,
+            spamMoved: 0,
+            blockedMatched: 0,
+            blockedMoved: 0,
+            checkedRules: 0,
+            appliedRules: 0,
+            skipped: "error",
+            error: message.slice(0, 200),
+          });
         }
-        const message = error instanceof Error ? error.message : "sync failed";
-        perFolder.push({
-          folderPath: folder.path,
-          newMails: 0,
-          flagsUpdated: 0,
-          removedFromIndex: 0,
-          uidValidityChanged: false,
-          spamFlagged: 0,
-          spamMoved: 0,
-          blockedMatched: 0,
-          blockedMoved: 0,
-          checkedRules: 0,
-          appliedRules: 0,
-          skipped: "error",
-          error: message.slice(0, 200),
-        });
       }
+      processedMailsEstimate = Math.min(totalMails, processedMailsEstimate + folderEstimate);
+      updateSyncAllProgress(session.userId, accountId, {
+        folderDone: perFolder.length,
+        processedMails: processedMailsEstimate,
+        remainingMails: Math.max(0, totalMails - processedMailsEstimate),
+      });
     }
 
     await writeAuditLog({
@@ -194,6 +252,13 @@ export async function POST(
       },
     });
 
+    finishSyncAllProgress({
+      userId: session.userId,
+      accountId,
+      phase: "finished",
+      message: "Synchronisation abgeschlossen",
+    });
+
     return ok({
       accountId,
       folderCount: folders.length,
@@ -210,6 +275,15 @@ export async function POST(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed";
+    if (accountId && session.userId) {
+      finishSyncAllProgress({
+        userId: session.userId,
+        accountId,
+        phase: "failed",
+        message: "Synchronisation fehlgeschlagen",
+        error: message.slice(0, 500),
+      });
+    }
     if (accountId && session.userId) {
       await writeAuditLog({
         userId: session.userId,
