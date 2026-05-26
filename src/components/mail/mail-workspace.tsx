@@ -13,6 +13,7 @@ import {
 import { useRouter } from "next/navigation";
 import { buildSafeMailDocument } from "@/lib/sanitizeMailHtml";
 import { linkifyMailPlainText } from "@/lib/linkifyMailPlainText";
+import { EmailDetailModal } from "@/components/mail/email-detail-modal";
 import {
   DEFAULT_MAIL_SCROLL_BATCH,
   snapMailScrollBatchSize,
@@ -77,7 +78,7 @@ function ResizeHandle({ onDrag, ariaLabel }: ResizeHandleProps) {
       aria-orientation="vertical"
       aria-label={ariaLabel}
       onPointerDown={handlePointerDown}
-      className="hidden w-1 shrink-0 cursor-col-resize bg-gray-200 transition-colors hover:bg-blue-400 active:bg-blue-500 lg:block"
+      className="hidden w-1 shrink-0 cursor-col-resize glass-resize-handle lg:block"
     />
   );
 }
@@ -178,8 +179,8 @@ function FolderTreeRow({
   return (
     <li>
       <div
-        className={`flex items-center gap-1 pr-2 ${
-          isActive ? "bg-gray-900 text-white" : unread > 0 ? "text-gray-900" : "text-gray-700"
+        className={`flex items-center gap-1 pr-2 rounded-lg mx-1 ${
+          isActive ? "glass-active" : unread > 0 ? "glass-text-primary font-medium" : "glass-text-secondary"
         }`}
         style={{ paddingLeft: indent }}
       >
@@ -188,7 +189,7 @@ function FolderTreeRow({
             onClick={() => onToggle(node.path)}
             aria-label={isExpanded ? "Einklappen" : "Ausklappen"}
             className={`flex h-6 w-5 shrink-0 items-center justify-center text-[10px] ${
-              isActive ? "text-gray-200 hover:text-white" : "text-gray-400 hover:text-gray-700"
+              isActive ? "text-white/70 hover:text-white" : "glass-text-muted hover:opacity-80"
             }`}
           >
             {isExpanded ? "▼" : "▶"}
@@ -201,15 +202,15 @@ function FolderTreeRow({
           className={`flex flex-1 items-center justify-between gap-2 py-1 text-left text-sm ${
             !isActive && unread > 0 ? "font-medium" : ""
           } ${
-            !isActive && selectable ? "hover:bg-gray-100" : ""
-          } ${!isActive && !selectable ? "italic text-gray-500 hover:bg-gray-50" : ""}`}
+            !isActive && selectable ? "hover:bg-white/30 rounded-lg" : ""
+          } ${!isActive && !selectable ? "italic glass-text-muted hover:bg-white/20 rounded-lg" : ""}`}
           title={node.path}
         >
           <span className="truncate">{node.segment}</span>
           {selectable ? (
             <span
               className={`shrink-0 text-xs tabular-nums ${
-                isActive ? "text-gray-200" : "text-gray-500"
+                isActive ? "text-white/70" : "glass-text-muted"
               }`}
             >
               {unread > 0 ? `${unread}/${total}` : total > 0 ? total : ""}
@@ -490,6 +491,7 @@ export function MailWorkspace() {
   const [isLoadingBody, setIsLoadingBody] = useState(false);
   const [bodyError, setBodyError] = useState("");
   const [bodyMode, setBodyMode] = useState<"text" | "html">("html");
+  const [showExternalImages, setShowExternalImages] = useState(false);
   const [printMode, setPrintMode] = useState<"html" | "text">("html");
   const [isBodyMaximized, setIsBodyMaximized] = useState(false);
   const [hoveredAttachmentPreview, setHoveredAttachmentPreview] =
@@ -511,6 +513,8 @@ export function MailWorkspace() {
     includeOnReply: true,
     includeOnForward: true,
   });
+  const [popupEmailId, setPopupEmailId] = useState<string | null>(null);
+  const [pendingLinkUrl, setPendingLinkUrl] = useState<string | null>(null);
   const composeEditorRef = useRef<HTMLDivElement | null>(null);
   const mailBodyIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -551,8 +555,8 @@ export function MailWorkspace() {
   // scripts/handlers/external images, the wrapper sets a tight CSP, and the
   // host iframe still has `sandbox=""` so even bypasses cannot execute JS.
   const safeMailDocument = useMemo(
-    () => (bodyContent?.html ? buildSafeMailDocument(bodyContent.html) : ""),
-    [bodyContent],
+    () => (bodyContent?.html ? buildSafeMailDocument(bodyContent.html, { allowExternalImages: showExternalImages }) : ""),
+    [bodyContent, showExternalImages],
   );
 
   const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
@@ -889,27 +893,44 @@ export function MailWorkspace() {
     setBodyError("");
     setBodyMode("html");
     setIsBodyMaximized(false);
+    setShowExternalImages(false);
+    setIsLoadingBody(true);
     const res = await fetch(`/api/emails/${id}`);
     if (!res.ok) {
       setUiError("E-Mail konnte nicht geladen werden.");
       setSelectedEmail(null);
       setEmailDetailMenuOpen(false);
       setIsLoadingDetail(false);
+      setIsLoadingBody(false);
       return;
     }
     const data = await res.json();
-    setSelectedEmail(data.email ?? null);
+    const emailData = data.email ?? null;
+    setSelectedEmail(emailData);
     setMobileView("detail");
     setIsLoadingDetail(false);
-    await loadContactCandidates();
+    loadContactCandidates().catch(() => {});
     await loadBody(id);
+    if (emailData && !(emailData.flags ?? []).includes("\\Seen")) {
+      fetch(`/api/emails/${id}/mark-read`, { method: "POST" }).catch(() => {});
+      setSelectedEmail((prev: Email | null) =>
+        prev?.id === id ? { ...prev, flags: [...(prev.flags ?? []), "\\Seen"] } : prev,
+      );
+      setEmails((prev) =>
+        prev.map((e) =>
+          e.id === id ? { ...e, flags: [...(e.flags ?? []), "\\Seen"] } : e,
+        ),
+      );
+    }
   }
 
-  async function loadBody(id: string) {
+  async function loadBody(id: string, force?: boolean) {
     setIsLoadingBody(true);
     setBodyError("");
+    setShowExternalImages(false);
     try {
-      const res = await fetch(`/api/emails/${id}/body`);
+      const url = `/api/emails/${id}/body${force ? "?refresh=1" : ""}`;
+      const res = await fetch(url);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setBodyError(
@@ -919,10 +940,15 @@ export function MailWorkspace() {
         return;
       }
       const data = (await res.json()) as {
-        body?: { text?: string; html?: string; textFromHtml?: string };
+        body?: { text?: string; html?: string; textFromHtml?: string; cached?: boolean };
       };
       const text = data.body?.text || data.body?.textFromHtml || "";
       const html = data.body?.html || "";
+
+      if (!html && !text && !force) {
+        return loadBody(id, true);
+      }
+
       setBodyContent({ text, html });
       setBodyMode(html ? "html" : text ? "text" : "text");
     } catch (error) {
@@ -1534,6 +1560,23 @@ export function MailWorkspace() {
   }, []);
 
   useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.data?.type === "mailpilot-link-click" && typeof e.data.href === "string") {
+        const href: string = e.data.href;
+        if (/^mailto:/i.test(href)) {
+          window.location.href = href;
+          return;
+        }
+        if (/^https?:\/\//i.test(href)) {
+          setPendingLinkUrl(href);
+        }
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  useEffect(() => {
     if (!isBodyMaximized) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setIsBodyMaximized(false);
@@ -1712,7 +1755,7 @@ export function MailWorkspace() {
           b.offsetHeight,
           htmlEl.offsetHeight,
         );
-        el.style.height = `${Math.max(h + 64, 320)}px`;
+        el.style.minHeight = `${Math.max(h + 64, 480)}px`;
       } catch {
         /* ignore */
       }
@@ -1888,22 +1931,22 @@ export function MailWorkspace() {
 
 
   return (
-    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gray-50">
+    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden">
       <div
-        className={`z-20 shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-white px-2 py-1.5 shadow-sm lg:hidden ${
+        className={`glass-solid z-20 shrink-0 items-center justify-between gap-2 border-b-0 px-2 py-1.5 lg:hidden ${
           mobileMainHeaderExpanded ? "hidden" : "flex"
         }`}
       >
-        <span className="min-w-0 truncate text-xs font-semibold text-gray-800">
+        <span className="min-w-0 truncate text-xs font-semibold glass-text-primary">
           MailPilot
           {selectedAccount ? (
-            <span className="font-normal text-gray-600"> · {selectedAccount.name}</span>
+            <span className="font-normal glass-text-secondary"> · {selectedAccount.name}</span>
           ) : null}
         </span>
         <button
           type="button"
           onClick={() => setMobileMainHeaderExpandedPersist(true)}
-          className="shrink-0 rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+          className="glass-btn shrink-0 rounded-lg p-2"
           aria-label="Hauptmenü anzeigen"
           title="Hauptmenü anzeigen"
         >
@@ -1924,7 +1967,7 @@ export function MailWorkspace() {
       </div>
 
       <header
-        className={`sticky top-0 z-20 shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 shadow-sm md:px-4 lg:flex ${
+        className={`glass-solid sticky top-0 z-20 shrink-0 flex-wrap items-center gap-2 border-b-0 px-3 py-2 md:px-4 lg:flex ${
           mobileMainHeaderExpanded ? "flex" : "hidden"
         }`}
       >
@@ -1933,7 +1976,7 @@ export function MailWorkspace() {
             onClick={() => setFoldersOpen((v) => !v)}
             aria-label={foldersOpen ? "Ordner einklappen" : "Ordner ausklappen"}
             title={foldersOpen ? "Ordner einklappen" : "Ordner ausklappen"}
-            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-gray-700 hover:bg-gray-50"
+            className="glass-btn rounded-lg px-2 py-1.5"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -1950,13 +1993,13 @@ export function MailWorkspace() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <h1 className="min-w-0 shrink truncate text-base font-semibold text-gray-900 lg:shrink-0 lg:overflow-visible lg:whitespace-normal">
+          <h1 className="min-w-0 shrink truncate text-base font-semibold glass-text-primary lg:shrink-0 lg:overflow-visible lg:whitespace-normal">
             MailPilot
           </h1>
           <button
             type="button"
             onClick={() => setMobileMainHeaderExpandedPersist(false)}
-            className="ml-auto shrink-0 rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50 lg:hidden"
+            className="glass-btn ml-auto shrink-0 rounded-lg p-2 lg:hidden"
             aria-label="Hauptmenü einklappen"
             title="Mehr Platz für Mails"
           >
@@ -1989,7 +2032,7 @@ export function MailWorkspace() {
             setMobileView("list");
             setEmailDetailMenuOpen(false);
           }}
-          className="ml-2 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm"
+          className="glass-select ml-2 rounded-lg px-2 py-1.5 text-sm"
         >
           <option value="">Konto wählen</option>
           {accounts.map((account) => (
@@ -2004,7 +2047,7 @@ export function MailWorkspace() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Suchen in Betreff, Absender, Inhalt..."
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-gray-700 focus:outline-none"
+            className="glass-input w-full rounded-lg px-3 py-1.5 text-sm"
           />
         </div>
 
@@ -2016,7 +2059,7 @@ export function MailWorkspace() {
             aria-haspopup="menu"
             aria-expanded={showSyncMenu}
             aria-controls="mailpilot-sync-menu"
-            className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-60"
+            className="glass-btn-dark rounded-lg px-3 py-1.5 text-sm disabled:opacity-60"
             title="Synchronisationsoptionen"
           >
             {isSyncing ? "Synchronisiere..." : "Synchronisieren ▾"}
@@ -2025,7 +2068,7 @@ export function MailWorkspace() {
             <div
               id="mailpilot-sync-menu"
               role="menu"
-              className="absolute right-0 z-30 mt-1 w-72 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg"
+              className="glass-solid absolute right-0 z-30 mt-1 w-72 overflow-hidden rounded-xl"
             >
               <button
                 role="menuitem"
@@ -2034,12 +2077,12 @@ export function MailWorkspace() {
                   void syncCurrentFolder("incremental");
                 }}
                 disabled={isSyncing || !selectedAccountId || !selectedFolderPath}
-                className="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:opacity-50"
+                className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
               >
-                <span className="font-medium text-gray-900">
+                <span className="font-medium glass-text-primary">
                   Aktuellen Ordner synchronisieren
                 </span>
-                <span className="block text-xs text-gray-600">
+                <span className="block text-xs glass-text-tertiary">
                   Nur neue Mails und Statusänderungen laden
                 </span>
               </button>
@@ -2050,12 +2093,12 @@ export function MailWorkspace() {
                   void syncCurrentFolder("full");
                 }}
                 disabled={isSyncing || !selectedAccountId || !selectedFolderPath}
-                className="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:opacity-50"
+                className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
               >
-                <span className="font-medium text-gray-900">
+                <span className="font-medium glass-text-primary">
                   Aktuellen Ordner vollständig neu indexieren
                 </span>
-                <span className="block text-xs text-gray-600">
+                <span className="block text-xs glass-text-tertiary">
                   Vollsync — kann länger dauern, fragt vor dem Start nach Bestätigung
                 </span>
               </button>
@@ -2066,12 +2109,12 @@ export function MailWorkspace() {
                   void syncCurrentFolder("full", "attachments");
                 }}
                 disabled={isSyncing || !selectedAccountId || !selectedFolderPath}
-                className="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:opacity-50"
+                className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
               >
-                <span className="font-medium text-gray-900">
+                <span className="font-medium glass-text-primary">
                   Anhang-Daten neu einlesen (aktueller Ordner)
                 </span>
-                <span className="block text-xs text-gray-600">
+                <span className="block text-xs glass-text-tertiary">
                   Nutzt Vollsync, um Dateiname/Typ/Größe/Part-ID für bestehende Mails zu aktualisieren
                 </span>
               </button>
@@ -2082,12 +2125,12 @@ export function MailWorkspace() {
                   void syncAllFolders();
                 }}
                 disabled={isSyncing || !selectedAccountId}
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:opacity-50"
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
               >
-                <span className="font-medium text-gray-900">
+                <span className="font-medium glass-text-primary">
                   Alle Ordner synchronisieren
                 </span>
-                <span className="block text-xs text-gray-600">
+                <span className="block text-xs glass-text-tertiary">
                   Lädt Header und Zähler aller Ordner und Unterordner
                 </span>
               </button>
@@ -2098,7 +2141,7 @@ export function MailWorkspace() {
           type="button"
           onClick={() => void checkNow()}
           disabled={isSyncing || !selectedAccountId || !selectedFolderPath}
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm disabled:opacity-50"
           title={`Sofort auf neue Mails pruefen (Intervall: ${newMailCheckIntervalMinutes} Min.)`}
         >
           Check jetzt
@@ -2106,7 +2149,7 @@ export function MailWorkspace() {
         <a
           href="/search"
           title="Erweiterte Suche"
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm"
         >
           <span className="hidden md:inline">Erweiterte Suche</span>
           <span className="md:hidden">Suche</span>
@@ -2114,14 +2157,14 @@ export function MailWorkspace() {
         <a
           href="/ai-assistant"
           title="KI-Assistent"
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm"
         >
           ✨ KI
         </a>
         <button
           onClick={composeNewMail}
           title="Neue E-Mail"
-          className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-black"
+          className="glass-btn-primary rounded-lg px-3 py-1.5 text-sm"
         >
           Neue Mail
         </button>
@@ -2129,7 +2172,7 @@ export function MailWorkspace() {
           href="/settings"
           aria-label="Einstellungen"
           title="Einstellungen"
-          className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-gray-700 hover:bg-gray-50"
+          className="glass-btn rounded-lg px-2 py-1.5"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -2145,10 +2188,10 @@ export function MailWorkspace() {
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </a>
-        <ThemeToggle className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-gray-700 hover:bg-gray-50" />
+        <ThemeToggle className="glass-btn rounded-lg px-2 py-1.5" />
         <button
           onClick={logout}
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm"
         >
           Logout
         </button>
@@ -2156,31 +2199,31 @@ export function MailWorkspace() {
 
       {syncProgress ? (
         <div
-          className="border-b border-blue-200 bg-blue-50 px-4 py-1.5"
+          className="glass-info px-4 py-1.5"
           role="status"
           aria-live="polite"
         >
           <div className="flex items-center gap-3">
-            <span className="text-xs text-blue-900">{syncProgress.label}</span>
+            <span className="text-xs">{syncProgress.label}</span>
           </div>
           <div
-            className="mt-1 h-1 w-full overflow-hidden rounded-full bg-blue-200"
+            className="mt-1 h-1 w-full overflow-hidden rounded-full bg-blue-200/40"
             role="progressbar"
             aria-label={syncProgress.label}
             aria-valuetext="läuft"
           >
-            <div className="mailpilot-progress-bar h-full w-1/3 rounded-full bg-blue-600" />
+            <div className="mailpilot-progress-bar h-full w-1/3 rounded-full bg-blue-500" />
           </div>
         </div>
       ) : null}
 
       {uiError ? (
-        <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <p className="glass-error px-4 py-2 text-sm text-red-600">
           {uiError}
         </p>
       ) : null}
       {uiInfo ? (
-        <p className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+        <p className="glass-info px-4 py-2 text-sm">
           {uiInfo}
         </p>
       ) : null}
@@ -2196,17 +2239,17 @@ export function MailWorkspace() {
       >
         {foldersOpen ? (
           <aside
-            className={`flex max-h-[50dvh] min-h-0 shrink-0 flex-col border-r border-gray-200 bg-white lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 ${
+            className={`glass flex max-h-[50dvh] min-h-0 shrink-0 flex-col border-r-0 lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 ${
               mobileView !== "list" ? "hidden lg:flex" : "flex"
             }`}
           >
-            <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <div className="flex items-center justify-between border-b glass-divider px-3 py-2">
+              <span className="text-xs font-semibold uppercase tracking-wide glass-text-muted">
                 Ordner
               </span>
               <button
                 onClick={() => void reloadFolders()}
-                className="text-xs text-gray-500 hover:text-gray-800"
+                className="text-xs glass-text-muted hover:opacity-80"
                 title="Ordner aktualisieren"
               >
                 ↻
@@ -2214,7 +2257,7 @@ export function MailWorkspace() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto py-1 text-sm">
               {folders.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-gray-500">
+                <p className="px-3 py-2 text-xs glass-text-muted">
                   {selectedAccountId ? "Lade Ordner..." : "Kein Konto gewählt."}
                 </p>
               ) : (
@@ -2222,10 +2265,10 @@ export function MailWorkspace() {
                   <li>
                     <button
                       onClick={() => setAccountExpanded((v) => !v)}
-                      className="flex w-full items-center gap-1 px-2 py-1 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100"
+                      className="flex w-full items-center gap-1 px-2 py-1 text-left text-sm font-semibold glass-text-primary hover:bg-white/30"
                       title={selectedAccount?.name ?? accountRootLabel}
                     >
-                      <span className="flex h-6 w-5 shrink-0 items-center justify-center text-[10px] text-gray-500">
+                      <span className="flex h-6 w-5 shrink-0 items-center justify-center text-[10px] glass-text-muted">
                         {accountExpanded ? "▼" : "▶"}
                       </span>
                       <span className="truncate">{accountRootLabel}</span>
@@ -2263,18 +2306,18 @@ export function MailWorkspace() {
         ) : null}
 
         <section
-          className={`flex min-h-0 flex-1 flex-col border-r border-gray-200 bg-white lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 ${
+          className={`glass-subtle flex min-h-0 flex-1 flex-col border-r-0 lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 ${
             mobileView === "detail" ? "hidden lg:flex" : "flex"
           }`}
         >
-          <div className="flex items-center gap-3 border-b border-gray-100 px-3 py-2">
+          <div className="flex items-center gap-3 border-b glass-divider px-3 py-2">
             <div className="flex gap-3 text-sm">
               <button
                 onClick={() => setTab("all")}
                 className={`relative pb-1 ${
                   tab === "all"
-                    ? "font-semibold text-gray-900 after:absolute after:inset-x-0 after:-bottom-[5px] after:h-[2px] after:bg-gray-900"
-                    : "text-gray-500 hover:text-gray-800"
+                    ? "font-semibold glass-text-primary after:absolute after:inset-x-0 after:-bottom-[5px] after:h-[2px] after:bg-current"
+                    : "glass-text-muted hover:opacity-80"
                 }`}
               >
                 Alle
@@ -2283,8 +2326,8 @@ export function MailWorkspace() {
                 onClick={() => setTab("unread")}
                 className={`relative pb-1 ${
                   tab === "unread"
-                    ? "font-semibold text-gray-900 after:absolute after:inset-x-0 after:-bottom-[5px] after:h-[2px] after:bg-gray-900"
-                    : "text-gray-500 hover:text-gray-800"
+                    ? "font-semibold glass-text-primary after:absolute after:inset-x-0 after:-bottom-[5px] after:h-[2px] after:bg-current"
+                    : "glass-text-muted hover:opacity-80"
                 }`}
               >
                 Ungelesen
@@ -2295,7 +2338,7 @@ export function MailWorkspace() {
               onChange={(e) =>
                 setSort(e.target.value as "date_desc" | "date_asc" | "from_asc" | "subject_asc")
               }
-              className="ml-auto rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700"
+              className="glass-select ml-auto rounded-lg px-2 py-1 text-xs"
             >
               <option value="date_desc">Neueste</option>
               <option value="date_asc">Älteste</option>
@@ -2304,8 +2347,8 @@ export function MailWorkspace() {
             </select>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-3 py-2">
-            <label className="flex items-center gap-1 text-xs text-gray-700">
+          <div className="flex flex-wrap items-center gap-2 border-b glass-divider px-3 py-2">
+            <label className="flex items-center gap-1 text-xs glass-text-secondary">
               <input
                 type="checkbox"
                 checked={emails.length > 0 && emails.every((e) => selectedIds.has(e.id))}
@@ -2323,20 +2366,20 @@ export function MailWorkspace() {
             </label>
             <button
               onClick={() => setHasAttachmentsFilter((v) => !v)}
-              className={`rounded-full border px-2 py-0.5 text-xs ${
+              className={`rounded-full px-2 py-0.5 text-xs transition-all ${
                 hasAttachmentsFilter
-                  ? "border-gray-900 bg-gray-900 text-white"
-                  : "border-gray-300 text-gray-700"
+                  ? "glass-btn-dark"
+                  : "glass-btn"
               }`}
             >
               Mit Anhängen
             </button>
             <button
               onClick={() => setActionRequiredFilter((v) => !v)}
-              className={`rounded-full border px-2 py-0.5 text-xs ${
+              className={`rounded-full px-2 py-0.5 text-xs transition-all ${
                 actionRequiredFilter
-                  ? "border-gray-900 bg-gray-900 text-white"
-                  : "border-gray-300 text-gray-700"
+                  ? "glass-btn-dark"
+                  : "glass-btn"
               }`}
             >
               Aktion erforderlich
@@ -2347,7 +2390,7 @@ export function MailWorkspace() {
                   setEmptyConfirmText("");
                   setEmptyFolderModalOpen(true);
                 }}
-                className="ml-auto rounded-md border border-red-300 bg-white px-2 py-0.5 text-xs text-red-700 hover:bg-red-50"
+                className="glass-btn ml-auto rounded-lg px-2 py-0.5 text-xs text-red-600"
                 title={
                   folderEmptyKind === "trash"
                     ? "Alle Mails im Papierkorb endgültig entfernen"
@@ -2360,42 +2403,42 @@ export function MailWorkspace() {
           </div>
 
           {selectedIds.size > 0 ? (
-            <div className="flex flex-wrap items-center gap-2 border-b border-blue-200 bg-blue-50 px-3 py-2 text-xs">
-              <span className="font-medium text-blue-900">
+            <div className="glass-info flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+              <span className="font-medium">
                 {selectedIds.size} ausgewählt
               </span>
               <button
                 disabled={bulkBusy}
                 onClick={() => void runBulk("mark_read")}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
               >
                 Gelesen
               </button>
               <button
                 disabled={bulkBusy}
                 onClick={() => void runBulk("mark_unread")}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
               >
                 Ungelesen
               </button>
               <button
                 disabled={bulkBusy}
                 onClick={() => void runBulk("move_trash")}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
               >
                 Papierkorb
               </button>
               <button
                 disabled={bulkBusy}
                 onClick={() => void runBulk("move_spam")}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
               >
                 Spam
               </button>
               <select
                 value={moveTargetFolder}
                 onChange={(e) => setMoveTargetFolder(e.target.value)}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1"
+                className="glass-select rounded-lg px-2 py-1"
               >
                 <option value="">Verschieben nach…</option>
                 {folders.map((f) => (
@@ -2409,13 +2452,13 @@ export function MailWorkspace() {
                 onClick={() =>
                   void runBulk("move_folder", { targetFolder: moveTargetFolder })
                 }
-                className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
               >
                 Verschieben
               </button>
               <button
                 onClick={clearSelection}
-                className="ml-auto rounded-md border border-gray-300 bg-white px-2 py-1"
+                className="glass-btn ml-auto rounded-lg px-2 py-1"
               >
                 Auswahl aufheben
               </button>
@@ -2427,14 +2470,14 @@ export function MailWorkspace() {
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
           >
             {isLoadingEmails ? (
-              <p className="px-4 py-3 text-sm text-gray-600">Lade E-Mails...</p>
+              <p className="px-4 py-3 text-sm glass-text-secondary">Lade E-Mails...</p>
             ) : null}
             {!isLoadingEmails && emails.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-gray-500">
+              <p className="px-4 py-6 text-sm glass-text-muted">
                 Keine E-Mails für die aktuellen Filter.
               </p>
             ) : null}
-            <ul className="divide-y divide-gray-100">
+            <ul className="divide-y glass-divider">
               {emails.map((email) => {
                 const unread = isUnread(email);
                 const sender = senderDisplayName(email);
@@ -2457,10 +2500,10 @@ export function MailWorkspace() {
                   <li key={email.id}>
                     <div
                       onContextMenu={(e) => openMailContextMenu(e, email)}
-                      className={`flex w-full items-start gap-2 rounded-md border-2 px-2 py-2 text-left transition ${
+                      className={`flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-all ${
                         isSelected || isChecked
-                          ? "border-4 border-red-600 bg-transparent"
-                          : "border-transparent bg-white hover:bg-gray-50"
+                          ? "glass-selected border-2"
+                          : "border-2 border-transparent hover:bg-white/40"
                       }`}
                     >
                       <label
@@ -2476,6 +2519,10 @@ export function MailWorkspace() {
                       </label>
                       <button
                         onClick={() => loadEmail(email.id)}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          setPopupEmailId(email.id);
+                        }}
                         className="flex flex-1 items-start gap-3 text-left"
                       >
                       <span className="mt-0.5 flex shrink-0 flex-col items-center gap-1">
@@ -2509,12 +2556,12 @@ export function MailWorkspace() {
                         <span className="flex items-baseline justify-between gap-2">
                           <span
                             className={`truncate text-sm ${
-                              unread ? "font-semibold text-gray-900" : "text-gray-800"
+                              unread ? "font-semibold glass-text-primary" : "glass-text-secondary"
                             }`}
                           >
                             {sender}
                           </span>
-                          <span className="shrink-0 text-right text-[11px] text-gray-500">
+                          <span className="shrink-0 text-right text-[11px] glass-text-muted">
                             <span className="block">
                               Eingang: {formatDateTimeShort(email.createdAt ?? email.date)}
                             </span>
@@ -2522,12 +2569,12 @@ export function MailWorkspace() {
                         </span>
                         <span
                           className={`block truncate text-sm ${
-                            unread ? "font-semibold text-gray-900" : "text-gray-700"
+                            unread ? "font-semibold glass-text-primary" : "glass-text-secondary"
                           }`}
                         >
                           {email.subject || "(Ohne Betreff)"}
                         </span>
-                        <span className="block truncate text-xs text-gray-500">
+                        <span className="block truncate text-xs glass-text-muted">
                           {email.snippet ?? ""}
                         </span>
                         {attachmentCount > 0 ? (
@@ -2541,17 +2588,17 @@ export function MailWorkspace() {
                         ) : null}
                         <span className="mt-1 flex flex-wrap gap-1">
                           {email.aiCategory ? (
-                            <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">
+                            <span className="glass-badge-accent text-[10px]">
                               {email.aiCategory}
                             </span>
                           ) : null}
                           {email.aiPriority && email.aiPriority !== "normal" ? (
-                            <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[10px] text-orange-700">
+                            <span className="glass-badge text-[10px]" style={{ color: "var(--text-secondary)" }}>
                               {email.aiPriority}
                             </span>
                           ) : null}
                           {email.actionRequired ? (
-                            <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-700">
+                            <span className="rounded-full bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-[10px] text-red-600">
                               Aktion
                             </span>
                           ) : null}
@@ -2572,7 +2619,7 @@ export function MailWorkspace() {
               />
             ) : null}
             {isLoadingMoreEmails ? (
-              <p className="px-4 py-3 text-center text-xs text-gray-500">Lade weitere Mails…</p>
+              <p className="px-4 py-3 text-center text-xs glass-text-muted">Lade weitere Mails…</p>
             ) : null}
             {!isLoadingEmails && emails.length > 0 && !emailsHasMore ? (
               <p className="px-4 py-3 text-center text-xs text-gray-400">Alle geladenen Mails angezeigt.</p>
@@ -2583,22 +2630,22 @@ export function MailWorkspace() {
         <ResizeHandle onDrag={dragList} ariaLabel="Listenbreite ändern" />
 
         <section
-          className={`flex min-h-0 flex-1 flex-col bg-white lg:min-w-0 ${
+          className={`glass-heavy flex min-h-0 flex-1 flex-col lg:min-w-0 ${
             mobileView === "list" ? "hidden lg:flex" : "flex"
           }`}
         >
           {selectedEmail ? (
             <>
-              <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 lg:hidden">
+              <div className="flex items-center gap-2 border-b glass-divider px-3 py-2 lg:hidden">
                 <button
                   onClick={() => setMobileView("list")}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+                  className="glass-btn rounded-lg px-3 py-1.5 text-sm"
                 >
                   ← Liste
                 </button>
               </div>
 
-              <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 md:px-4">
+              <div className="flex items-center gap-2 border-b glass-divider px-3 py-2 md:px-4">
                 <span
                   className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white sm:flex ${getAvatarColor(
                     selectedEmail.fromEmail || selectedEmail.fromName || selectedEmail.id,
@@ -2607,7 +2654,7 @@ export function MailWorkspace() {
                 >
                   {getInitials(selectedEmail.fromName, selectedEmail.fromEmail)}
                 </span>
-                <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 md:text-lg">
+                <h2 className="min-w-0 flex-1 truncate text-base font-semibold glass-text-primary md:text-lg">
                   {selectedEmail.subject || "(Ohne Betreff)"}
                 </h2>
                 <div className="relative shrink-0" data-email-detail-menu-root>
@@ -2620,7 +2667,7 @@ export function MailWorkspace() {
                     aria-label="Mail-Details und Befehle"
                     aria-expanded={emailDetailMenuOpen}
                     aria-haspopup="menu"
-                    className="flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    className="glass-btn flex h-10 w-10 items-center justify-center rounded-lg"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -2637,45 +2684,45 @@ export function MailWorkspace() {
                   {emailDetailMenuOpen ? (
                     <div
                       role="menu"
-                      className="absolute right-0 z-30 mt-1 max-h-[min(85vh,560px)] w-[min(calc(100vw-2rem),18rem)] overflow-y-auto rounded-md border border-gray-200 bg-white py-2 text-sm shadow-lg"
+                      className="glass-solid absolute right-0 z-30 mt-1 max-h-[min(85vh,560px)] w-[min(calc(100vw-2rem),18rem)] overflow-y-auto rounded-xl py-2 text-sm"
                     >
-                      <div className="border-b border-gray-100 px-3 pb-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <div className="border-b glass-divider px-3 pb-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">
                           Details
                         </p>
-                        <p className="mt-1 break-words text-sm font-medium text-gray-900">
+                        <p className="mt-1 break-words text-sm font-medium glass-text-primary">
                           {selectedEmail.subject || "(Ohne Betreff)"}
                         </p>
-                        <p className="mt-2 text-xs text-gray-700">
+                        <p className="mt-2 text-xs glass-text-secondary">
                           {senderDisplayName(selectedEmail)}
                           {selectedEmail.fromEmail ? (
-                            <span className="block break-all text-gray-600">
+                            <span className="block break-all glass-text-tertiary">
                               &lt;{selectedEmail.fromEmail}&gt;
                             </span>
                           ) : null}
                         </p>
-                        <p className="mt-1 break-words text-xs text-gray-600">
+                        <p className="mt-1 break-words text-xs glass-text-tertiary">
                           An: {(selectedEmail.toEmails ?? []).join(", ") || "—"}
                         </p>
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs glass-text-muted">
                           Eingang: {formatDetailDate(selectedEmail.createdAt)}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs glass-text-muted">
                           Gesendet: {formatDetailDate(selectedEmail.date)}
                         </p>
                       </div>
 
                       {bodyContent && bodyContent.html && bodyContent.text ? (
-                        <div className="border-b border-gray-100 px-3 py-2">
-                          <p className="text-xs font-semibold text-gray-500">Ansicht</p>
+                        <div className="border-b glass-divider px-3 py-2">
+                          <p className="text-xs font-semibold glass-text-muted">Ansicht</p>
                           <div className="mt-1 flex gap-1">
                             <button
                               type="button"
                               onClick={() => setBodyMode("text")}
-                              className={`flex-1 rounded border px-2 py-1 text-xs ${
+                              className={`flex-1 rounded-lg px-2 py-1 text-xs ${
                                 bodyMode === "text"
-                                  ? "border-gray-900 bg-gray-900 text-white"
-                                  : "border-gray-300 text-gray-700"
+                                  ? "glass-btn-dark"
+                                  : "glass-btn"
                               }`}
                             >
                               Text
@@ -2683,10 +2730,10 @@ export function MailWorkspace() {
                             <button
                               type="button"
                               onClick={() => setBodyMode("html")}
-                              className={`flex-1 rounded border px-2 py-1 text-xs ${
+                              className={`flex-1 rounded-lg px-2 py-1 text-xs ${
                                 bodyMode === "html"
-                                  ? "border-gray-900 bg-gray-900 text-white"
-                                  : "border-gray-300 text-gray-700"
+                                  ? "glass-btn-dark"
+                                  : "glass-btn"
                               }`}
                             >
                               HTML
@@ -2695,12 +2742,12 @@ export function MailWorkspace() {
                         </div>
                       ) : null}
 
-                      <div className="border-b border-gray-100 px-3 py-2">
-                        <p className="text-xs font-semibold text-gray-500">Druck</p>
+                      <div className="border-b glass-divider px-3 py-2">
+                        <p className="text-xs font-semibold glass-text-muted">Druck</p>
                         <select
                           value={printMode}
                           onChange={(e) => setPrintMode(e.target.value as "html" | "text")}
-                          className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700"
+                          className="glass-select mt-1 w-full rounded-lg px-2 py-1.5 text-xs"
                           title="Druckmodus"
                         >
                           <option value="html">Druck: HTML</option>
@@ -2713,11 +2760,21 @@ export function MailWorkspace() {
                               setEmailDetailMenuOpen(false);
                               setIsBodyMaximized(true);
                             }}
-                            className="mt-2 w-full rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                            className="glass-btn mt-2 w-full rounded-lg px-2 py-1.5 text-xs"
                           >
                             Inhalt vergrößern
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEmailDetailMenuOpen(false);
+                            void loadBody(selectedEmail.id, true);
+                          }}
+                          className="glass-btn mt-1 w-full rounded-lg px-2 py-1.5 text-xs"
+                        >
+                          Inhalt neu laden
+                        </button>
                       </div>
 
                       <button
@@ -2726,7 +2783,7 @@ export function MailWorkspace() {
                           setEmailDetailMenuOpen(false);
                           replyToSelected();
                         }}
-                        className="block w-full px-3 py-2 text-left font-medium hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left font-medium hover:bg-white/30 rounded-lg"
                       >
                         Antworten
                       </button>
@@ -2736,7 +2793,7 @@ export function MailWorkspace() {
                           setEmailDetailMenuOpen(false);
                           forwardSelected();
                         }}
-                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-white/30 rounded-lg"
                       >
                         Weiterleiten
                       </button>
@@ -2746,7 +2803,7 @@ export function MailWorkspace() {
                           setEmailDetailMenuOpen(false);
                           void runAction(`/api/emails/${selectedEmail.id}/mark-read`);
                         }}
-                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-white/30 rounded-lg"
                       >
                         Gelesen
                       </button>
@@ -2756,7 +2813,7 @@ export function MailWorkspace() {
                           setEmailDetailMenuOpen(false);
                           void runAction(`/api/emails/${selectedEmail.id}/mark-unread`);
                         }}
-                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-white/30 rounded-lg"
                       >
                         Ungelesen
                       </button>
@@ -2768,7 +2825,7 @@ export function MailWorkspace() {
                             targetSpecial: "trash",
                           });
                         }}
-                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-white/30 rounded-lg"
                       >
                         Papierkorb
                       </button>
@@ -2780,7 +2837,7 @@ export function MailWorkspace() {
                             targetSpecial: "spam",
                           });
                         }}
-                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-white/30 rounded-lg"
                       >
                         Spam
                       </button>
@@ -2790,7 +2847,7 @@ export function MailWorkspace() {
                           setEmailDetailMenuOpen(false);
                           printSelectedEmail();
                         }}
-                        className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                        className="block w-full px-3 py-2 text-left hover:bg-white/30 rounded-lg"
                       >
                         Drucken
                       </button>
@@ -2810,7 +2867,7 @@ export function MailWorkspace() {
                         <select
                           value={moveTargetFolder}
                           onChange={(e) => setMoveTargetFolder(e.target.value)}
-                          className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs"
+                          className="glass-select w-full rounded-lg px-2 py-1.5 text-xs"
                         >
                           <option value="">Ordner wählen…</option>
                           {folders.map((folder) => (
@@ -2825,7 +2882,7 @@ export function MailWorkspace() {
                             setEmailDetailMenuOpen(false);
                             void moveToSelectedFolder();
                           }}
-                          className="mt-2 w-full rounded border border-gray-300 px-2 py-1.5 text-xs hover:bg-gray-50"
+                          className="glass-btn mt-2 w-full rounded-lg px-2 py-1.5 text-xs"
                         >
                           Verschieben
                         </button>
@@ -2866,18 +2923,18 @@ export function MailWorkspace() {
               </div>
 
               {isLoadingDetail ? (
-                <p className="px-4 py-2 text-sm text-gray-600">Lade Detail...</p>
+                <p className="px-4 py-2 text-sm glass-text-secondary">Lade Detail...</p>
               ) : null}
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-20 lg:pb-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-20 lg:pb-4 flex flex-col">
                 {selectedEmail.aiSummaryShort ? (
-                  <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-sm">
-                    <p className="font-semibold text-blue-900">KI-Zusammenfassung</p>
-                    <p className="text-blue-900">{selectedEmail.aiSummaryShort}</p>
+                  <div className="glass-info mb-4 rounded-xl p-3 text-sm">
+                    <p className="font-semibold">KI-Zusammenfassung</p>
+                    <p>{selectedEmail.aiSummaryShort}</p>
                     {selectedEmail.aiSummaryLong ? (
-                      <p className="mt-1 text-xs text-blue-800">{selectedEmail.aiSummaryLong}</p>
+                      <p className="mt-1 text-xs opacity-80">{selectedEmail.aiSummaryLong}</p>
                     ) : null}
-                    <p className="mt-1 text-xs text-blue-800">
+                    <p className="mt-1 text-xs opacity-80">
                       Kategorie: {selectedEmail.aiCategory ?? "unknown"} | Priorität:{" "}
                       {selectedEmail.aiPriority ?? "normal"}
                     </p>
@@ -2886,7 +2943,7 @@ export function MailWorkspace() {
 
                 {(selectedEmail.attachments?.length ?? 0) > 0 ? (
                   <div className="mb-4">
-                    <h3 className="text-sm font-semibold text-gray-900">Anhänge</h3>
+                    <h3 className="text-sm font-semibold glass-text-primary">Anhänge</h3>
                     <ul className="mt-2 space-y-2">
                       {selectedEmail.attachments.map((attachment) => {
                         const previewUrl = `/api/emails/${selectedEmail.id}/attachments/${attachment.id}/preview`;
@@ -2901,7 +2958,7 @@ export function MailWorkspace() {
                               updateAttachmentHoverPreview(e, previewUrl, attachment)
                             }
                             onMouseLeave={() => setHoveredAttachmentPreview(null)}
-                            className="relative rounded-lg border border-gray-200 bg-white p-3 text-sm"
+                            className="glass relative rounded-xl p-3 text-sm"
                           >
                             <div className="flex flex-wrap items-start justify-between gap-2">
                               <div className="min-w-0">
@@ -2913,11 +2970,11 @@ export function MailWorkspace() {
                                 >
                                   📎 {getAttachmentDisplayName(attachment)}
                                 </a>
-                                <p className="text-xs text-gray-600">
+                                <p className="text-xs glass-text-tertiary">
                                   {attachment.mimeType || "unbekannt"} ·{" "}
                                   {attachment.size ?? 0} Bytes
                                 </p>
-                                <p className="text-xs text-gray-600">
+                                <p className="text-xs glass-text-tertiary">
                                   Status:{" "}
                                   {attachment.saveStatus === "saved"
                                     ? "in Cloud gespeichert"
@@ -2937,13 +2994,13 @@ export function MailWorkspace() {
                                   href={previewUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="rounded border border-gray-300 px-2 py-1 text-xs"
+                                  className="glass-btn rounded-lg px-2 py-1 text-xs"
                                 >
                                   Öffnen
                                 </a>
                                 <a
                                   href={downloadUrl}
-                                  className="rounded border border-gray-300 px-2 py-1 text-xs"
+                                  className="glass-btn rounded-lg px-2 py-1 text-xs"
                                 >
                                   Herunterladen
                                 </a>
@@ -2960,7 +3017,7 @@ export function MailWorkspace() {
                                       });
                                     }
                                   }}
-                                  className="rounded border border-gray-300 px-2 py-1 text-xs"
+                                  className="glass-btn rounded-lg px-2 py-1 text-xs"
                                 >
                                   Drucken
                                 </button>
@@ -2978,7 +3035,7 @@ export function MailWorkspace() {
                                       | "mock",
                                   })
                                 }
-                                className="rounded border border-gray-300 px-2 py-1 text-xs"
+                                className="glass-btn rounded-lg px-2 py-1 text-xs"
                               >
                                 <option value="mock">MockCloud</option>
                                 <option value="google_drive">Google Drive</option>
@@ -2991,11 +3048,11 @@ export function MailWorkspace() {
                                     targetPath: e.target.value,
                                   })
                                 }
-                                className="min-w-[180px] flex-1 rounded border border-gray-300 px-2 py-1 text-xs"
+                                className="glass-select min-w-[180px] flex-1 rounded-lg px-2 py-1 text-xs"
                               />
                               <button
                                 onClick={() => saveAttachmentToCloud(attachment.id)}
-                                className="rounded border border-gray-300 px-2 py-1 text-xs"
+                                className="glass-btn rounded-lg px-2 py-1 text-xs"
                               >
                                 In Cloud speichern
                               </button>
@@ -3008,15 +3065,18 @@ export function MailWorkspace() {
                 ) : null}
 
                 {isLoadingBody ? (
-                  <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-600">
-                    Lade Mailinhalt vom IMAP-Server...
+                  <div className="glass rounded-xl p-4 text-sm glass-text-secondary animate-pulse">
+                    <div className="flex items-center gap-2">
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      Lade Mailinhalt vom IMAP-Server…
+                    </div>
                   </div>
                 ) : bodyError ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  <div className="glass-error rounded-xl p-4 text-sm">
                     {bodyError}
                     <button
-                      onClick={() => selectedEmail && loadBody(selectedEmail.id)}
-                      className="ml-2 underline"
+                      onClick={() => selectedEmail && void loadBody(selectedEmail.id, true)}
+                      className="ml-2 underline font-medium"
                     >
                       Erneut versuchen
                     </button>
@@ -3024,36 +3084,77 @@ export function MailWorkspace() {
                 ) : bodyContent &&
                   bodyMode === "html" &&
                   bodyContent.html ? (
-                  <iframe
-                    ref={mailBodyIframeRef}
-                    title="Mailinhalt"
-                    sandbox=""
-                    srcDoc={safeMailDocument}
-                    referrerPolicy="no-referrer"
-                    className="block w-full max-w-full min-h-[45dvh] rounded-lg border border-gray-100 bg-white lg:min-h-[480px]"
-                    style={{ border: "none" }}
-                  />
+                  <div className="flex w-full flex-1 flex-col">
+                    {!showExternalImages ? (
+                      <div className="glass-info rounded-xl px-3 py-2 text-xs mb-2 flex items-center justify-between shrink-0">
+                        <span className="glass-text-secondary">Externe Bilder wurden aus Sicherheitsgründen blockiert.</span>
+                        <button
+                          onClick={() => setShowExternalImages(true)}
+                          className="glass-btn rounded-lg px-3 py-1 text-xs shrink-0 ml-2"
+                        >
+                          Bilder laden
+                        </button>
+                      </div>
+                    ) : null}
+                    <iframe
+                      ref={mailBodyIframeRef}
+                      title="Mailinhalt"
+                      sandbox="allow-scripts"
+                      srcDoc={safeMailDocument}
+                      referrerPolicy="no-referrer"
+                      className="block w-full flex-1 rounded-xl glass"
+                      style={{ border: "none", maxWidth: "100%", minHeight: "480px" }}
+                    />
+                  </div>
                 ) : (
-                  <div
-                    className="min-h-[45dvh] max-w-full whitespace-pre-wrap break-words rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800 lg:min-h-[400px]"
-                  >
-                    {(() => {
-                      const plain =
-                        bodyContent?.text ||
-                        selectedEmail.textPreview ||
-                        selectedEmail.snippet ||
-                        "";
-                      return plain
-                        ? linkifyMailPlainText(plain)
-                        : "(Kein Mailinhalt verfügbar.)";
-                    })()}
+                  <div>
+                    {!bodyContent ? (
+                      <div className="glass-info rounded-xl p-4 text-sm mb-3 flex items-center gap-3">
+                        <svg className="h-5 w-5 shrink-0 glass-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
+                        <div className="flex-1">
+                          <p className="font-medium glass-text-primary text-sm">Mailinhalt wird geladen…</p>
+                          <p className="glass-text-muted text-xs mt-0.5">Der vollständige Inhalt wird vom IMAP-Server abgerufen.</p>
+                        </div>
+                        <button
+                          onClick={() => selectedEmail && void loadBody(selectedEmail.id, true)}
+                          className="glass-btn rounded-lg px-3 py-1.5 text-xs shrink-0"
+                        >
+                          Neu laden
+                        </button>
+                      </div>
+                    ) : bodyContent.text && !bodyContent.html ? (
+                      <div className="glass-info rounded-xl px-3 py-2 text-xs mb-2 flex items-center gap-2">
+                        <span className="glass-text-secondary">Nur Text-Version verfügbar.</span>
+                        <button
+                          onClick={() => selectedEmail && void loadBody(selectedEmail.id, true)}
+                          className="glass-btn rounded-lg px-3 py-1 text-xs"
+                        >
+                          HTML-Version laden
+                        </button>
+                      </div>
+                    ) : null}
+                    <div
+                      className="glass flex-1 max-w-full whitespace-pre-wrap break-words rounded-xl p-4 text-sm leading-relaxed glass-text-secondary"
+                      style={{ minHeight: "400px" }}
+                    >
+                      {(() => {
+                        const plain =
+                          bodyContent?.text ||
+                          selectedEmail.textPreview ||
+                          selectedEmail.snippet ||
+                          "";
+                        return plain
+                          ? linkifyMailPlainText(plain)
+                          : "(Kein Mailinhalt verfügbar.)";
+                      })()}
+                    </div>
                   </div>
                 )}
 
                 {selectedEmailCandidates.length > 0 ? (
-                  <div className="mt-4 rounded-lg border border-gray-200 bg-white p-3 text-sm">
-                    <p className="font-semibold text-gray-900">Kontaktvorschläge</p>
-                    <ul className="mt-1 space-y-1 text-xs text-gray-700">
+                  <div className="glass mt-4 rounded-xl p-3 text-sm">
+                    <p className="font-semibold glass-text-primary">Kontaktvorschläge</p>
+                    <ul className="mt-1 space-y-1 text-xs glass-text-secondary">
                       {selectedEmailCandidates.map((candidate) => (
                         <li key={candidate.id}>
                           {candidate.personName || candidate.email || "Unbekannt"} ({candidate.status})
@@ -3065,7 +3166,7 @@ export function MailWorkspace() {
               </div>
             </>
           ) : (
-            <div className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">
+            <div className="flex flex-1 items-center justify-center p-6 text-sm glass-text-muted">
               Keine E-Mail ausgewählt.
             </div>
           )}
@@ -3078,13 +3179,13 @@ export function MailWorkspace() {
             role="menu"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
-            className="fixed z-50 w-[320px] rounded-lg border border-gray-200 bg-white p-2 shadow-2xl"
+            className="glass-solid fixed z-50 w-[320px] rounded-xl p-2"
             style={{
               left: Math.max(8, Math.min(mailContextMenu.x, window.innerWidth - 328)),
               top: Math.max(8, Math.min(mailContextMenu.y, window.innerHeight - 420)),
             }}
           >
-            <p className="border-b border-gray-100 px-2 pb-1 text-xs text-gray-500">
+            <p className="border-b glass-divider px-2 pb-1 text-xs glass-text-muted">
               {contextMenuIsBulk
                 ? `${contextMenuTargetIds.length} Mails ausgewählt`
                 : senderDisplayName(contextMenuEmail)}
@@ -3159,12 +3260,12 @@ export function MailWorkspace() {
             </button>
 
             <div className="my-1 border-t border-gray-100 pt-1">
-              <p className="px-2 text-xs text-gray-500">Verschieben in Ordner</p>
+              <p className="px-2 text-xs glass-text-muted">Verschieben in Ordner</p>
               <div className="mt-1 flex gap-1 px-1">
                 <select
                   value={contextMoveTargetFolder}
                   onChange={(e) => setContextMoveTargetFolder(e.target.value)}
-                  className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                  className="glass-select w-full rounded-lg px-2 py-1 text-xs"
                 >
                   <option value="">Ordner wählen…</option>
                   {folders.map((folder) => (
@@ -3175,7 +3276,7 @@ export function MailWorkspace() {
                 </select>
                 <button
                   disabled={!contextMoveTargetFolder}
-                  className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
+                  className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
                   onClick={() => {
                     if (!contextMoveTargetFolder) return;
                     if (contextMenuIsBulk) {
@@ -3199,12 +3300,12 @@ export function MailWorkspace() {
 
             {!contextMenuIsBulk && contextMenuAttachments.length > 0 ? (
               <div className="my-1 border-t border-gray-100 pt-1">
-                <p className="px-2 text-xs text-gray-500">Anhänge</p>
+                <p className="px-2 text-xs glass-text-muted">Anhänge</p>
                 <div className="mt-1 px-1">
                   <select
                     value={selectedContextAttachment?.id ?? ""}
                     onChange={(e) => setContextAttachmentId(e.target.value)}
-                    className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                    className="glass-select w-full rounded-lg px-2 py-1 text-xs"
                   >
                     {contextMenuAttachments.map((attachment) => (
                       <option key={attachment.id} value={attachment.id}>
@@ -3216,7 +3317,7 @@ export function MailWorkspace() {
                 <div className="mt-1 grid grid-cols-3 gap-1 px-1">
                   <button
                     disabled={!selectedContextAttachment}
-                    className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
+                    className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
                     onClick={() => {
                       if (!selectedContextAttachment) return;
                       openAttachment(contextMenuEmail.id, selectedContextAttachment.id);
@@ -3227,7 +3328,7 @@ export function MailWorkspace() {
                   </button>
                   <button
                     disabled={!selectedContextAttachment}
-                    className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
+                    className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
                     onClick={() => {
                       if (!selectedContextAttachment) return;
                       printAttachment(contextMenuEmail.id, selectedContextAttachment.id);
@@ -3238,7 +3339,7 @@ export function MailWorkspace() {
                   </button>
                   <button
                     disabled={!selectedContextAttachment}
-                    className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
+                    className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
                     onClick={() => {
                       if (!selectedContextAttachment) return;
                       void saveAttachmentToCloudForEmail(contextMenuEmail.id, selectedContextAttachment.id);
@@ -3250,7 +3351,7 @@ export function MailWorkspace() {
                 </div>
                 <div className="mt-1 grid grid-cols-3 gap-1 px-1">
                   <button
-                    className="rounded border border-gray-300 px-2 py-1 text-xs"
+                    className="glass-btn rounded-lg px-2 py-1 text-xs"
                     onClick={() => {
                       contextMenuAttachments.forEach((attachment) =>
                         openAttachment(contextMenuEmail.id, attachment.id),
@@ -3261,7 +3362,7 @@ export function MailWorkspace() {
                     Alle öffnen
                   </button>
                   <button
-                    className="rounded border border-gray-300 px-2 py-1 text-xs"
+                    className="glass-btn rounded-lg px-2 py-1 text-xs"
                     onClick={() => {
                       contextMenuAttachments.forEach((attachment) =>
                         printAttachment(contextMenuEmail.id, attachment.id),
@@ -3272,7 +3373,7 @@ export function MailWorkspace() {
                     Alle drucken
                   </button>
                   <button
-                    className="rounded border border-gray-300 px-2 py-1 text-xs"
+                    className="glass-btn rounded-lg px-2 py-1 text-xs"
                     onClick={() => {
                       void (async () => {
                         for (const attachment of contextMenuAttachments) {
@@ -3292,10 +3393,10 @@ export function MailWorkspace() {
       ) : null}
 
       {composeOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="flex h-[90vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-              <h3 className="text-base font-semibold text-gray-900">
+        <div className="glass-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="glass-modal flex h-[90vh] w-full max-w-5xl flex-col rounded-2xl">
+            <div className="flex items-center justify-between border-b glass-divider px-4 py-3">
+              <h3 className="text-base font-semibold glass-text-primary">
                 {composeMode === "new"
                   ? "Neue Mail"
                   : composeMode === "reply"
@@ -3303,22 +3404,22 @@ export function MailWorkspace() {
                     : "Weiterleiten"}
               </h3>
               <button
-                className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700"
+                className="glass-btn rounded-lg px-3 py-1 text-sm"
                 onClick={() => setComposeOpen(false)}
               >
                 Abbrechen
               </button>
             </div>
 
-            <div className="space-y-2 border-b border-gray-200 px-4 py-3 text-sm">
+            <div className="space-y-2 border-b glass-divider px-4 py-3 text-sm">
               <div className="grid grid-cols-[110px_1fr] items-center gap-2">
-                <label className="text-gray-600">Konto</label>
+                <label className="glass-text-secondary">Konto</label>
                 <select
                   value={composeForm.accountId}
                   onChange={(e) =>
                     setComposeForm((prev) => ({ ...prev, accountId: e.target.value }))
                   }
-                  className="rounded border border-gray-300 px-2 py-1.5"
+                  className="glass-select rounded-lg px-2 py-1.5"
                 >
                   <option value="">Konto wählen...</option>
                   {accounts.map((account) => (
@@ -3329,58 +3430,58 @@ export function MailWorkspace() {
                 </select>
               </div>
               <div className="grid grid-cols-[110px_1fr] items-center gap-2">
-                <label className="text-gray-600">An</label>
+                <label className="glass-text-secondary">An</label>
                 <input
                   value={composeForm.to}
                   onChange={(e) => setComposeForm((prev) => ({ ...prev, to: e.target.value }))}
                   placeholder="max@firma.de; team@firma.de"
-                  className="rounded border border-gray-300 px-2 py-1.5"
+                  className="glass-input rounded-lg px-2 py-1.5"
                 />
               </div>
               <div className="grid grid-cols-[110px_1fr] items-center gap-2">
-                <label className="text-gray-600">CC</label>
+                <label className="glass-text-secondary">CC</label>
                 <input
                   value={composeForm.cc}
                   onChange={(e) => setComposeForm((prev) => ({ ...prev, cc: e.target.value }))}
-                  className="rounded border border-gray-300 px-2 py-1.5"
+                  className="glass-input rounded-lg px-2 py-1.5"
                 />
               </div>
               <div className="grid grid-cols-[110px_1fr] items-center gap-2">
-                <label className="text-gray-600">BCC</label>
+                <label className="glass-text-secondary">BCC</label>
                 <input
                   value={composeForm.bcc}
                   onChange={(e) => setComposeForm((prev) => ({ ...prev, bcc: e.target.value }))}
-                  className="rounded border border-gray-300 px-2 py-1.5"
+                  className="glass-input rounded-lg px-2 py-1.5"
                 />
               </div>
               <div className="grid grid-cols-[110px_1fr] items-center gap-2">
-                <label className="text-gray-600">Betreff</label>
+                <label className="glass-text-secondary">Betreff</label>
                 <input
                   value={composeForm.subject}
                   onChange={(e) => setComposeForm((prev) => ({ ...prev, subject: e.target.value }))}
-                  className="rounded border border-gray-300 px-2 py-1.5"
+                  className="glass-input rounded-lg px-2 py-1.5"
                 />
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-1 border-b border-gray-200 px-4 py-2 text-xs">
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("bold")}>Fett</button>
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("italic")}>Kursiv</button>
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("underline")}>Unterstr.</button>
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("insertUnorderedList")}>Liste</button>
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("insertOrderedList")}>1.</button>
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("formatBlock", "blockquote")}>Zitat</button>
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("insertHorizontalRule")}>Linie</button>
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("insertText", "✎")}>Zeichen ✎</button>
-              <button className="rounded border border-gray-300 px-2 py-1" onClick={() => applyComposeCommand("insertText", "✓")}>Zeichen ✓</button>
+            <div className="flex flex-wrap gap-1 border-b glass-divider px-4 py-2 text-xs">
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("bold")}>Fett</button>
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("italic")}>Kursiv</button>
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("underline")}>Unterstr.</button>
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("insertUnorderedList")}>Liste</button>
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("insertOrderedList")}>1.</button>
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("formatBlock", "blockquote")}>Zitat</button>
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("insertHorizontalRule")}>Linie</button>
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("insertText", "✎")}>Zeichen ✎</button>
+              <button className="glass-btn rounded-lg px-2 py-1" onClick={() => applyComposeCommand("insertText", "✓")}>Zeichen ✓</button>
               <input
                 type="color"
-                className="h-7 w-10 rounded border border-gray-300"
+                className="glass-input h-7 w-10 rounded-lg"
                 onChange={(e) => applyComposeCommand("foreColor", e.target.value)}
                 title="Textfarbe"
               />
               <button
-                className="ml-auto rounded border border-gray-300 px-2 py-1"
+                className="glass-btn ml-auto rounded-lg px-2 py-1"
                 onClick={() => {
                   const signature = insertSignatureHtml(composeMode);
                   if (!signature) return;
@@ -3402,36 +3503,36 @@ export function MailWorkspace() {
                     bodyHtml: composeEditorRef.current?.innerHTML || "",
                   }))
                 }
-                className="min-h-[260px] rounded border border-gray-300 p-3 text-sm focus:outline-none"
+                className="glass-input min-h-[260px] rounded-xl p-3 text-sm"
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2 border-t glass-divider px-4 py-3 text-sm">
               <input
                 type="datetime-local"
                 value={composeForm.sendAtLocal}
                 onChange={(e) => setComposeForm((prev) => ({ ...prev, sendAtLocal: e.target.value }))}
-                className="rounded border border-gray-300 px-2 py-1.5"
+                className="glass-input rounded-lg px-2 py-1.5"
                 title="Später senden"
               />
               <button
                 disabled={composeSaving}
                 onClick={() => void submitCompose("send_later")}
-                className="rounded border border-gray-300 px-3 py-1.5 disabled:opacity-60"
+                className="glass-btn rounded-lg px-3 py-1.5 disabled:opacity-60"
               >
                 Später senden
               </button>
               <button
                 disabled={composeSaving}
                 onClick={() => void submitCompose("save_draft")}
-                className="rounded border border-gray-300 px-3 py-1.5 disabled:opacity-60"
+                className="glass-btn rounded-lg px-3 py-1.5 disabled:opacity-60"
               >
                 Als Entwurf speichern
               </button>
               <button
                 disabled={composeSaving}
                 onClick={() => void submitCompose("send_now")}
-                className="ml-auto rounded bg-gray-900 px-3 py-1.5 text-white disabled:opacity-60"
+                className="glass-btn-primary ml-auto rounded-lg px-3 py-1.5 disabled:opacity-60"
               >
                 Jetzt senden
               </button>
@@ -3442,24 +3543,24 @@ export function MailWorkspace() {
 
       {emptyFolderModalOpen && folderEmptyKind ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="glass-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={() => !bulkBusy && setEmptyFolderModalOpen(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl"
+            className="glass-modal w-full max-w-md rounded-2xl p-5"
           >
-            <h3 className="text-base font-semibold text-gray-900">
+            <h3 className="text-base font-semibold glass-text-primary">
               {folderEmptyKind === "trash" ? "Papierkorb leeren?" : "Spam leeren?"}
             </h3>
-            <p className="mt-2 text-sm text-gray-700">
+            <p className="mt-2 text-sm glass-text-secondary">
               Diese Aktion löscht alle E-Mails im Ordner{" "}
               <span className="font-mono">{selectedFolderPath}</span>{" "}
               <strong>endgültig</strong> und kann nicht rückgängig gemacht werden.
             </p>
-            <p className="mt-2 text-xs text-gray-600">
+            <p className="mt-2 text-xs glass-text-tertiary">
               Tippe zur Bestätigung <span className="font-mono font-semibold">LEEREN</span>{" "}
               ein:
             </p>
@@ -3468,7 +3569,7 @@ export function MailWorkspace() {
               value={emptyConfirmText}
               onChange={(e) => setEmptyConfirmText(e.target.value)}
               placeholder="LEEREN"
-              className="mt-2 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              className="glass-input mt-2 w-full rounded-lg px-3 py-2 text-sm"
             />
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
@@ -3477,14 +3578,14 @@ export function MailWorkspace() {
                   setEmptyFolderModalOpen(false);
                   setEmptyConfirmText("");
                 }}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+                className="glass-btn rounded-lg px-3 py-1.5 text-sm"
               >
                 Abbrechen
               </button>
               <button
                 disabled={bulkBusy || emptyConfirmText !== "LEEREN"}
                 onClick={() => void emptyCurrentFolder()}
-                className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                className="rounded-lg bg-red-500/80 px-3 py-1.5 text-sm text-white backdrop-blur-sm disabled:opacity-50"
               >
                 {bulkBusy ? "Leere…" : "Endgültig leeren"}
               </button>
@@ -3495,10 +3596,10 @@ export function MailWorkspace() {
 
       {hoveredAttachmentPreview ? (
         <div
-          className="pointer-events-none fixed z-[80] hidden h-[240px] w-[360px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-2xl lg:block"
+          className="glass-solid pointer-events-none fixed z-[80] hidden h-[240px] w-[360px] overflow-hidden rounded-xl lg:block"
           style={{ left: hoveredAttachmentPreview.x, top: hoveredAttachmentPreview.y }}
         >
-          <div className="border-b border-gray-100 bg-gray-50 px-2 py-1 text-[11px] text-gray-600">
+          <div className="border-b glass-divider px-2 py-1 text-[11px] glass-text-tertiary">
             Vorschau: {hoveredAttachmentPreview.title}
           </div>
           <iframe
@@ -3511,18 +3612,18 @@ export function MailWorkspace() {
 
       {isBodyMaximized && selectedEmail && bodyContent ? (
         <div
-          className="fixed inset-0 z-50 flex bg-black/60"
+          className="glass-overlay fixed inset-0 z-50 flex"
           onClick={() => setIsBodyMaximized(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="m-auto flex h-full w-full flex-col bg-white shadow-2xl md:h-[90vh] md:w-[90vw] md:rounded-xl"
+            className="glass-modal m-auto flex h-full w-full flex-col md:h-[90vh] md:w-[90vw] md:rounded-2xl"
             role="dialog"
             aria-modal="true"
             aria-label="Mailinhalt vergrößert"
           >
-            <header className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4">
-              <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 md:text-lg">
+            <header className="flex shrink-0 items-center gap-2 border-b glass-divider px-3 py-2 md:px-4">
+              <h2 className="min-w-0 flex-1 truncate text-base font-semibold glass-text-primary md:text-lg">
                 {selectedEmail.subject || "(Ohne Betreff)"}
               </h2>
               <div className="relative shrink-0" data-max-body-menu-root>
@@ -3534,7 +3635,7 @@ export function MailWorkspace() {
                   }}
                   aria-label="Ansicht und Druck"
                   aria-expanded={maximizedBodyMenuOpen}
-                  className="flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  className="glass-btn flex h-10 w-10 items-center justify-center rounded-lg"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -3551,19 +3652,19 @@ export function MailWorkspace() {
                 {maximizedBodyMenuOpen ? (
                   <div
                     role="menu"
-                    className="absolute right-0 z-10 mt-1 w-56 rounded-md border border-gray-200 bg-white py-2 text-sm shadow-lg"
+                    className="glass-solid absolute right-0 z-10 mt-1 w-56 rounded-xl py-2 text-sm"
                   >
                     {bodyContent.html && bodyContent.text ? (
-                      <div className="border-b border-gray-100 px-3 py-2">
-                        <p className="text-xs font-semibold text-gray-500">Ansicht</p>
+                      <div className="border-b glass-divider px-3 py-2">
+                        <p className="text-xs font-semibold glass-text-muted">Ansicht</p>
                         <div className="mt-1 flex gap-1">
                           <button
                             type="button"
                             onClick={() => setBodyMode("text")}
-                            className={`flex-1 rounded border px-2 py-1 text-xs ${
+                            className={`flex-1 rounded-lg px-2 py-1 text-xs ${
                               bodyMode === "text"
-                                ? "border-gray-900 bg-gray-900 text-white"
-                                : "border-gray-300 text-gray-700"
+                                ? "glass-btn-dark"
+                                : "glass-btn"
                             }`}
                           >
                             Text
@@ -3571,10 +3672,10 @@ export function MailWorkspace() {
                           <button
                             type="button"
                             onClick={() => setBodyMode("html")}
-                            className={`flex-1 rounded border px-2 py-1 text-xs ${
+                            className={`flex-1 rounded-lg px-2 py-1 text-xs ${
                               bodyMode === "html"
-                                ? "border-gray-900 bg-gray-900 text-white"
-                                : "border-gray-300 text-gray-700"
+                                ? "glass-btn-dark"
+                                : "glass-btn"
                             }`}
                           >
                             HTML
@@ -3583,11 +3684,11 @@ export function MailWorkspace() {
                       </div>
                     ) : null}
                     <div className="px-3 py-2">
-                      <p className="text-xs font-semibold text-gray-500">Druck</p>
+                      <p className="text-xs font-semibold glass-text-muted">Druck</p>
                       <select
                         value={printMode}
                         onChange={(e) => setPrintMode(e.target.value as "html" | "text")}
-                        className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                        className="glass-select mt-1 w-full rounded-lg px-2 py-1.5 text-xs"
                         title="Druckmodus"
                       >
                         <option value="html">Druck: HTML</option>
@@ -3599,7 +3700,7 @@ export function MailWorkspace() {
                           setMaximizedBodyMenuOpen(false);
                           printSelectedEmail();
                         }}
-                        className="mt-2 w-full rounded border border-gray-300 px-2 py-1.5 text-xs hover:bg-gray-50"
+                        className="glass-btn mt-2 w-full rounded-lg px-2 py-1.5 text-xs"
                       >
                         Drucken
                       </button>
@@ -3614,24 +3715,37 @@ export function MailWorkspace() {
                   setIsBodyMaximized(false);
                 }}
                 aria-label="Schließen"
-                className="shrink-0 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className="glass-btn shrink-0 rounded-lg px-3 py-2 text-sm"
               >
                 ✕
               </button>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto p-2 md:p-4">
               {bodyMode === "html" && bodyContent.html ? (
-                <iframe
-                  ref={mailBodyIframeRef}
-                  title="Mailinhalt vergrößert"
-                  sandbox=""
-                  srcDoc={safeMailDocument}
-                  referrerPolicy="no-referrer"
-                  className="block w-full max-w-full min-h-[60vh] rounded-lg border border-gray-100 bg-white"
-                  style={{ border: "none" }}
-                />
+                <div className="w-full h-full flex flex-col">
+                  {!showExternalImages ? (
+                    <div className="glass-info rounded-xl px-3 py-2 text-xs mb-2 flex items-center justify-between shrink-0">
+                      <span className="glass-text-secondary">Externe Bilder blockiert.</span>
+                      <button
+                        onClick={() => setShowExternalImages(true)}
+                        className="glass-btn rounded-lg px-3 py-1 text-xs shrink-0 ml-2"
+                      >
+                        Bilder laden
+                      </button>
+                    </div>
+                  ) : null}
+                  <iframe
+                    ref={mailBodyIframeRef}
+                    title="Mailinhalt vergrößert"
+                    sandbox="allow-scripts"
+                    srcDoc={safeMailDocument}
+                    referrerPolicy="no-referrer"
+                    className="block w-full flex-1 min-h-[60vh] rounded-xl glass"
+                    style={{ border: "none", maxWidth: "100%", overflow: "hidden" }}
+                  />
+                </div>
               ) : (
-                <div className="min-h-[50vh] whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800">
+                <div className="glass min-h-[50vh] whitespace-pre-wrap rounded-xl p-4 text-sm leading-relaxed glass-text-secondary">
                   {(() => {
                     const plain =
                       bodyContent.text ||
@@ -3647,6 +3761,57 @@ export function MailWorkspace() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {pendingLinkUrl ? (
+        <div
+          className="glass-overlay fixed inset-0 z-[9999] flex items-center justify-center"
+          onClick={() => setPendingLinkUrl(null)}
+        >
+          <div
+            className="glass-card mx-4 w-full max-w-lg rounded-2xl p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-3 text-lg font-semibold glass-text-primary">
+              Externen Link öffnen?
+            </h3>
+            <p className="mb-2 text-sm glass-text-secondary">
+              Möchtest du diesen Link in einem neuen Tab öffnen?
+            </p>
+            <div className="mb-5 rounded-lg bg-black/5 p-3 break-all text-xs font-mono glass-text-primary">
+              {pendingLinkUrl}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingLinkUrl(null)}
+                className="glass-btn rounded-lg px-4 py-2 text-sm"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.open(pendingLinkUrl, "_blank", "noopener,noreferrer");
+                  setPendingLinkUrl(null);
+                }}
+                className="glass-btn-primary rounded-lg px-4 py-2 text-sm"
+              >
+                Link öffnen
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {popupEmailId ? (
+        <EmailDetailModal
+          emailId={popupEmailId}
+          onClose={() => setPopupEmailId(null)}
+          onAction={() => {
+            void loadEmails();
+          }}
+        />
       ) : null}
     </div>
   );

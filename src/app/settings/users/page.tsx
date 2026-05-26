@@ -180,24 +180,24 @@ export default function UsersSettingsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen p-6">
       <div className="mx-auto max-w-6xl">
         <div className="mb-2 flex items-center gap-2">
-          <a href="/settings" className="text-sm text-gray-600 hover:underline">
+          <a href="/settings" className="text-sm glass-text-secondary hover:underline">
             ← Zurück zu Einstellungen
           </a>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">Benutzerverwaltung</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="text-2xl font-semibold glass-text-primary">Benutzerverwaltung</h1>
+        <p className="mt-1 text-sm glass-text-secondary">
           App-Benutzer anlegen, Rollen vergeben, Passwörter zurücksetzen oder Benutzer löschen.
         </p>
 
         {feedback && (
           <div
-            className={`mt-4 rounded-lg border p-3 text-sm ${
+            className={`mt-4 rounded-xl p-3 text-sm ${
               feedback.kind === "error"
-                ? "border-red-200 bg-red-50 text-red-700"
-                : "border-green-200 bg-green-50 text-green-700"
+                ? "glass-error"
+                : "glass-success-box"
             }`}
           >
             {feedback.text}
@@ -205,24 +205,24 @@ export default function UsersSettingsPage() {
         )}
 
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_420px]">
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <section className="glass-card rounded-xl p-4">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-gray-900">Benutzer</h2>
+              <h2 className="text-lg font-semibold glass-text-primary">Benutzer</h2>
               <button
                 type="button"
                 onClick={loadUsers}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
+                className="glass-btn rounded-lg px-3 py-2 text-sm hover:bg-white/30"
               >
                 Aktualisieren
               </button>
             </div>
 
             {loading ? (
-              <p className="text-sm text-gray-600">Lade Benutzer...</p>
+              <p className="text-sm glass-text-secondary">Lade Benutzer...</p>
             ) : users.length === 0 ? (
-              <p className="text-sm text-gray-600">Keine Benutzer vorhanden.</p>
+              <p className="text-sm glass-text-secondary">Keine Benutzer vorhanden.</p>
             ) : (
-              <div className="overflow-hidden rounded-lg border border-gray-200">
+              <div className="overflow-hidden rounded-lg">
                 {users.map((user) => (
                   <button
                     key={user.id}
@@ -235,22 +235,22 @@ export default function UsersSettingsPage() {
                         role: user.role,
                       });
                     }}
-                    className={`block w-full border-b border-gray-200 p-4 text-left last:border-b-0 ${
-                      user.id === selectedId ? "bg-blue-50" : "bg-white hover:bg-gray-50"
+                    className={`block w-full border-b border-white/20 p-4 text-left last:border-b-0 ${
+                      user.id === selectedId ? "bg-blue-50/50" : "glass hover:bg-white/30"
                     }`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="font-medium text-gray-900">{user.email}</p>
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="font-medium glass-text-primary">{user.email}</p>
+                        <p className="mt-1 text-xs glass-text-tertiary">
                           Erstellt am {new Date(user.createdAt).toLocaleString("de-DE")}
                         </p>
                       </div>
-                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+                      <span className="rounded-full glass px-3 py-1 text-xs font-medium glass-text-secondary">
                         {roleLabel(user.role)}
                       </span>
                     </div>
-                    <p className="mt-2 text-xs text-gray-500">
+                    <p className="mt-2 text-xs glass-text-tertiary">
                       {user._count.mailAccounts} Mailkonto/-konten, {user._count.drafts} Entwurf/Entwürfe
                       {user.id === currentUserId ? " · aktuell angemeldet" : ""}
                     </p>
@@ -261,36 +261,36 @@ export default function UsersSettingsPage() {
           </section>
 
           <div className="space-y-6">
-            <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">Neuen Benutzer anlegen</h2>
+            <section className="glass-card rounded-xl p-4">
+              <h2 className="text-lg font-semibold glass-text-primary">Neuen Benutzer anlegen</h2>
               <form onSubmit={createUser} className="mt-4 space-y-3">
                 <label className="block">
-                  <span className="text-sm font-medium text-gray-700">E-Mail</span>
+                  <span className="text-sm font-medium glass-text-secondary">E-Mail</span>
                   <input
                     value={createForm.email}
                     onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
                     type="email"
                     required
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className="glass-input mt-1 w-full rounded-xl px-3 py-2 text-sm"
                   />
                 </label>
                 <label className="block">
-                  <span className="text-sm font-medium text-gray-700">Startpasswort</span>
+                  <span className="text-sm font-medium glass-text-secondary">Startpasswort</span>
                   <input
                     value={createForm.password}
                     onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))}
                     type="password"
                     minLength={6}
                     required
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className="glass-input mt-1 w-full rounded-xl px-3 py-2 text-sm"
                   />
                 </label>
                 <label className="block">
-                  <span className="text-sm font-medium text-gray-700">Rolle</span>
+                  <span className="text-sm font-medium glass-text-secondary">Rolle</span>
                   <select
                     value={createForm.role}
                     onChange={(e) => setCreateForm((prev) => ({ ...prev, role: e.target.value as UserRole }))}
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className="glass-select mt-1 w-full rounded-lg px-3 py-2 text-sm"
                   >
                     <option value="user">Benutzer</option>
                     <option value="administrator">Administrator</option>
@@ -298,44 +298,44 @@ export default function UsersSettingsPage() {
                 </label>
                 <button
                   type="submit"
-                  className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                  className="glass-btn-dark w-full rounded-lg px-4 py-2 text-sm font-medium"
                 >
                   Benutzer anlegen
                 </button>
               </form>
             </section>
 
-            <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">Ausgewählten Benutzer bearbeiten</h2>
+            <section className="glass-card rounded-xl p-4">
+              <h2 className="text-lg font-semibold glass-text-primary">Ausgewählten Benutzer bearbeiten</h2>
               {selectedUser ? (
                 <form onSubmit={updateSelected} className="mt-4 space-y-3">
                   <label className="block">
-                    <span className="text-sm font-medium text-gray-700">E-Mail</span>
+                    <span className="text-sm font-medium glass-text-secondary">E-Mail</span>
                     <input
                       value={editForm.email}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
                       type="email"
                       required
-                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      className="glass-input mt-1 w-full rounded-xl px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="block">
-                    <span className="text-sm font-medium text-gray-700">Neues Passwort</span>
+                    <span className="text-sm font-medium glass-text-secondary">Neues Passwort</span>
                     <input
                       value={editForm.password}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, password: e.target.value }))}
                       type="password"
                       minLength={6}
                       placeholder="Leer lassen, um es nicht zu ändern"
-                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      className="glass-input mt-1 w-full rounded-xl px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="block">
-                    <span className="text-sm font-medium text-gray-700">Rolle</span>
+                    <span className="text-sm font-medium glass-text-secondary">Rolle</span>
                     <select
                       value={editForm.role}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, role: e.target.value as UserRole }))}
-                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      className="glass-select mt-1 w-full rounded-lg px-3 py-2 text-sm"
                     >
                       <option value="user">Benutzer</option>
                       <option value="administrator">Administrator</option>
@@ -344,7 +344,7 @@ export default function UsersSettingsPage() {
                   <div className="flex flex-wrap gap-2 pt-2">
                     <button
                       type="submit"
-                      className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                      className="glass-btn-dark rounded-lg px-4 py-2 text-sm font-medium"
                     >
                       Speichern
                     </button>
@@ -358,7 +358,7 @@ export default function UsersSettingsPage() {
                   </div>
                 </form>
               ) : (
-                <p className="mt-4 text-sm text-gray-600">Bitte einen Benutzer auswählen.</p>
+                <p className="mt-4 text-sm glass-text-secondary">Bitte einen Benutzer auswählen.</p>
               )}
             </section>
           </div>

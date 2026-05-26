@@ -202,24 +202,24 @@ export default function AccountsSettingsPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen p-6">
       <div className="mx-auto max-w-4xl">
         <div className="mb-4 flex items-center gap-2">
-          <a href="/settings" className="text-sm text-gray-600 hover:underline">
+          <a href="/settings" className="text-sm glass-text-secondary hover:underline">
             ← Einstellungen
           </a>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">IMAP-Konten</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="text-2xl font-semibold glass-text-primary">IMAP-Konten</h1>
+        <p className="mt-1 text-sm glass-text-secondary">
           Verbindungsdaten werden serverseitig verschlüsselt gespeichert.
         </p>
 
         {feedback ? (
           <p
-            className={`mt-3 rounded-md px-3 py-2 text-sm ${
+            className={`mt-3 rounded-xl px-3 py-2 text-sm ${
               feedback.kind === "error"
-                ? "bg-red-50 text-red-700"
-                : "bg-green-50 text-green-700"
+                ? "glass-error"
+                : "glass-success-box"
             }`}
           >
             {feedback.text}
@@ -227,34 +227,34 @@ export default function AccountsSettingsPage() {
         ) : null}
 
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <section className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="text-sm font-semibold">Vorhandene Konten</h2>
+          <section className="glass-card p-4">
+            <h2 className="text-sm font-semibold glass-text-primary">Vorhandene Konten</h2>
             {loading ? (
-              <p className="mt-3 text-sm text-gray-600">Lade Konten...</p>
+              <p className="mt-3 text-sm glass-text-secondary">Lade Konten...</p>
             ) : null}
             {!loading && accounts.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-500">Noch kein Konto angelegt.</p>
+              <p className="mt-3 text-sm glass-text-tertiary">Noch kein Konto angelegt.</p>
             ) : null}
             <ul className="mt-3 space-y-2">
               {accounts.map((account) => (
                 <li key={account.id}>
                   <button
                     onClick={() => setSelectedId(account.id)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${
+                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-all ${
                       selectedId === account.id
-                        ? "border-gray-900 bg-gray-50"
-                        : "border-gray-200 hover:bg-gray-50"
+                        ? "border-white/40 glass-solid"
+                        : "border-white/10 hover:glass"
                     }`}
                   >
-                    <p className="font-medium">{account.name}</p>
-                    <p className="text-xs text-gray-600">{account.imapUsername}</p>
+                    <p className="font-medium glass-text-primary">{account.name}</p>
+                    <p className="text-xs glass-text-secondary">{account.imapUsername}</p>
                   </button>
                 </li>
               ))}
             </ul>
 
             {selectedAccount ? (
-              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <div className="glass mt-4 rounded-lg p-3 text-sm glass-text-secondary">
                 <p>
                   <span className="font-semibold">Host:</span> {selectedAccount.imapHost}
                 </p>
@@ -265,7 +265,7 @@ export default function AccountsSettingsPage() {
                 <p>
                   <span className="font-semibold">Benutzer:</span> {selectedAccount.imapUsername}
                 </p>
-                <p className="mt-2 border-t border-gray-200 pt-2">
+                <p className="mt-2 border-t glass-divider pt-2">
                   <span className="font-semibold">SMTP Host:</span> {selectedAccount.smtpHost || "-"}
                 </p>
                 <p>
@@ -283,13 +283,13 @@ export default function AccountsSettingsPage() {
                 <div className="mt-3 flex gap-2">
                   <button
                     onClick={testConnection}
-                    className="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    className="glass-btn rounded-lg px-3 py-1.5 text-xs"
                   >
                     Verbindung testen
                   </button>
                   <button
                     onClick={deleteSelected}
-                    className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700"
+                    className="glass-btn rounded-lg px-3 py-1.5 text-xs text-red-400"
                   >
                     Konto löschen
                   </button>
@@ -300,21 +300,21 @@ export default function AccountsSettingsPage() {
             {selectedAccount ? (
               <form
                 onSubmit={updateSelected}
-                className="mt-4 space-y-2 rounded-lg border border-gray-200 bg-white p-3 text-sm"
+                className="glass mt-4 space-y-2 rounded-lg p-3 text-sm"
               >
-                <p className="font-semibold text-gray-900">Ausgewähltes Konto bearbeiten</p>
+                <p className="font-semibold glass-text-primary">Ausgewähltes Konto bearbeiten</p>
                 <input
                   placeholder="Name"
                   value={editForm.name}
                   onChange={(e) => setEditForm((v) => ({ ...v, name: e.target.value }))}
-                  className="w-full rounded border border-gray-300 px-3 py-2"
+                  className="glass-input w-full rounded-xl px-3 py-2"
                   required
                 />
                 <input
                   placeholder="IMAP Host"
                   value={editForm.imapHost}
                   onChange={(e) => setEditForm((v) => ({ ...v, imapHost: e.target.value }))}
-                  className="w-full rounded border border-gray-300 px-3 py-2"
+                  className="glass-input w-full rounded-xl px-3 py-2"
                   required
                 />
                 <input
@@ -322,14 +322,14 @@ export default function AccountsSettingsPage() {
                   type="number"
                   value={editForm.imapPort}
                   onChange={(e) => setEditForm((v) => ({ ...v, imapPort: Number(e.target.value) }))}
-                  className="w-full rounded border border-gray-300 px-3 py-2"
+                  className="glass-input w-full rounded-xl px-3 py-2"
                   required
                 />
                 <input
                   placeholder="IMAP Benutzer"
                   value={editForm.imapUsername}
                   onChange={(e) => setEditForm((v) => ({ ...v, imapUsername: e.target.value }))}
-                  className="w-full rounded border border-gray-300 px-3 py-2"
+                  className="glass-input w-full rounded-xl px-3 py-2"
                   required
                 />
                 <input
@@ -337,9 +337,9 @@ export default function AccountsSettingsPage() {
                   type="password"
                   value={editForm.imapPassword}
                   onChange={(e) => setEditForm((v) => ({ ...v, imapPassword: e.target.value }))}
-                  className="w-full rounded border border-gray-300 px-3 py-2"
+                  className="glass-input w-full rounded-xl px-3 py-2"
                 />
-                <label className="flex items-center gap-2 text-xs text-gray-700">
+                <label className="flex items-center gap-2 text-xs glass-text-secondary">
                   <input
                     type="checkbox"
                     checked={editForm.imapSecure}
@@ -354,14 +354,14 @@ export default function AccountsSettingsPage() {
                   IMAP SSL/TLS
                 </label>
 
-                <div className="mt-2 border-t border-gray-200 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <div className="mt-2 border-t glass-divider pt-2 text-xs font-semibold uppercase tracking-wide glass-text-tertiary">
                   SMTP
                 </div>
                 <input
                   placeholder="SMTP Host"
                   value={editForm.smtpHost}
                   onChange={(e) => setEditForm((v) => ({ ...v, smtpHost: e.target.value }))}
-                  className="w-full rounded border border-gray-300 px-3 py-2"
+                  className="glass-input w-full rounded-xl px-3 py-2"
                   required
                 />
                 <input
@@ -369,10 +369,10 @@ export default function AccountsSettingsPage() {
                   type="number"
                   value={editForm.smtpPort}
                   onChange={(e) => setEditForm((v) => ({ ...v, smtpPort: Number(e.target.value) }))}
-                  className="w-full rounded border border-gray-300 px-3 py-2"
+                  className="glass-input w-full rounded-xl px-3 py-2"
                   required
                 />
-                <label className="flex items-center gap-2 text-xs text-gray-700">
+                <label className="flex items-center gap-2 text-xs glass-text-secondary">
                   <input
                     type="checkbox"
                     checked={editSmtpSameAsImap}
@@ -386,7 +386,7 @@ export default function AccountsSettingsPage() {
                       placeholder="SMTP Benutzer"
                       value={editForm.smtpUsername}
                       onChange={(e) => setEditForm((v) => ({ ...v, smtpUsername: e.target.value }))}
-                      className="w-full rounded border border-gray-300 px-3 py-2"
+                      className="glass-input w-full rounded-xl px-3 py-2"
                       required
                     />
                     <input
@@ -394,7 +394,7 @@ export default function AccountsSettingsPage() {
                       type="password"
                       value={editForm.smtpPassword}
                       onChange={(e) => setEditForm((v) => ({ ...v, smtpPassword: e.target.value }))}
-                      className="w-full rounded border border-gray-300 px-3 py-2"
+                      className="glass-input w-full rounded-xl px-3 py-2"
                     />
                   </>
                 ) : null}
@@ -402,9 +402,9 @@ export default function AccountsSettingsPage() {
                   placeholder="SMTP Absendername (optional)"
                   value={editForm.smtpFromName}
                   onChange={(e) => setEditForm((v) => ({ ...v, smtpFromName: e.target.value }))}
-                  className="w-full rounded border border-gray-300 px-3 py-2"
+                  className="glass-input w-full rounded-xl px-3 py-2"
                 />
-                <label className="flex items-center gap-2 text-xs text-gray-700">
+                <label className="flex items-center gap-2 text-xs glass-text-secondary">
                   <input
                     type="checkbox"
                     checked={editForm.smtpSecure}
@@ -420,7 +420,7 @@ export default function AccountsSettingsPage() {
                 </label>
                 <button
                   type="submit"
-                  className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm text-white"
+                  className="glass-btn-dark w-full rounded-lg px-3 py-2 text-sm"
                 >
                   Änderungen speichern
                 </button>
@@ -428,21 +428,21 @@ export default function AccountsSettingsPage() {
             ) : null}
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="text-sm font-semibold">Neues Konto (IMAP + SMTP)</h2>
+          <section className="glass-card p-4">
+            <h2 className="text-sm font-semibold glass-text-primary">Neues Konto (IMAP + SMTP)</h2>
             <form onSubmit={addAccount} className="mt-3 space-y-2 text-sm">
               <input
                 placeholder="Name"
                 value={form.name}
                 onChange={(e) => setForm((v) => ({ ...v, name: e.target.value }))}
-                className="w-full rounded border border-gray-300 px-3 py-2"
+                className="glass-input w-full rounded-xl px-3 py-2"
                 required
               />
               <input
                 placeholder="Host"
                 value={form.imapHost}
                 onChange={(e) => setForm((v) => ({ ...v, imapHost: e.target.value }))}
-                className="w-full rounded border border-gray-300 px-3 py-2"
+                className="glass-input w-full rounded-xl px-3 py-2"
                 required
               />
               <input
@@ -450,14 +450,14 @@ export default function AccountsSettingsPage() {
                 type="number"
                 value={form.imapPort}
                 onChange={(e) => setForm((v) => ({ ...v, imapPort: Number(e.target.value) }))}
-                className="w-full rounded border border-gray-300 px-3 py-2"
+                className="glass-input w-full rounded-xl px-3 py-2"
                 required
               />
               <input
                 placeholder="Benutzername"
                 value={form.imapUsername}
                 onChange={(e) => setForm((v) => ({ ...v, imapUsername: e.target.value }))}
-                className="w-full rounded border border-gray-300 px-3 py-2"
+                className="glass-input w-full rounded-xl px-3 py-2"
                 required
               />
               <input
@@ -465,10 +465,10 @@ export default function AccountsSettingsPage() {
                 type="password"
                 value={form.imapPassword}
                 onChange={(e) => setForm((v) => ({ ...v, imapPassword: e.target.value }))}
-                className="w-full rounded border border-gray-300 px-3 py-2"
+                className="glass-input w-full rounded-xl px-3 py-2"
                 required
               />
-              <label className="flex items-center gap-2 text-xs text-gray-700">
+              <label className="flex items-center gap-2 text-xs glass-text-secondary">
                 <input
                   type="checkbox"
                   checked={form.imapSecure}
@@ -483,14 +483,14 @@ export default function AccountsSettingsPage() {
                 SSL/TLS verwenden (aus: Port 143, an: Port 993)
               </label>
 
-              <div className="mt-3 border-t border-gray-200 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="mt-3 border-t glass-divider pt-3 text-xs font-semibold uppercase tracking-wide glass-text-tertiary">
                 SMTP (Versand)
               </div>
               <input
                 placeholder="SMTP Host"
                 value={form.smtpHost}
                 onChange={(e) => setForm((v) => ({ ...v, smtpHost: e.target.value }))}
-                className="w-full rounded border border-gray-300 px-3 py-2"
+                className="glass-input w-full rounded-xl px-3 py-2"
                 required
               />
               <input
@@ -498,10 +498,10 @@ export default function AccountsSettingsPage() {
                 type="number"
                 value={form.smtpPort}
                 onChange={(e) => setForm((v) => ({ ...v, smtpPort: Number(e.target.value) }))}
-                className="w-full rounded border border-gray-300 px-3 py-2"
+                className="glass-input w-full rounded-xl px-3 py-2"
                 required
               />
-              <label className="flex items-center gap-2 text-xs text-gray-700">
+              <label className="flex items-center gap-2 text-xs glass-text-secondary">
                 <input
                   type="checkbox"
                   checked={smtpSameAsImap}
@@ -515,7 +515,7 @@ export default function AccountsSettingsPage() {
                     placeholder="SMTP Benutzername"
                     value={form.smtpUsername}
                     onChange={(e) => setForm((v) => ({ ...v, smtpUsername: e.target.value }))}
-                    className="w-full rounded border border-gray-300 px-3 py-2"
+                    className="glass-input w-full rounded-xl px-3 py-2"
                     required
                   />
                   <input
@@ -523,7 +523,7 @@ export default function AccountsSettingsPage() {
                     type="password"
                     value={form.smtpPassword}
                     onChange={(e) => setForm((v) => ({ ...v, smtpPassword: e.target.value }))}
-                    className="w-full rounded border border-gray-300 px-3 py-2"
+                    className="glass-input w-full rounded-xl px-3 py-2"
                     required
                   />
                 </>
@@ -532,9 +532,9 @@ export default function AccountsSettingsPage() {
                 placeholder="SMTP Absendername (optional)"
                 value={form.smtpFromName}
                 onChange={(e) => setForm((v) => ({ ...v, smtpFromName: e.target.value }))}
-                className="w-full rounded border border-gray-300 px-3 py-2"
+                className="glass-input w-full rounded-xl px-3 py-2"
               />
-              <label className="flex items-center gap-2 text-xs text-gray-700">
+              <label className="flex items-center gap-2 text-xs glass-text-secondary">
                 <input
                   type="checkbox"
                   checked={form.smtpSecure}
@@ -550,7 +550,7 @@ export default function AccountsSettingsPage() {
               </label>
               <button
                 type="submit"
-                className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm text-white"
+                className="glass-btn-dark w-full rounded-lg px-3 py-2 text-sm"
               >
                 Konto speichern
               </button>

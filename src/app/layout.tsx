@@ -11,6 +11,7 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -29,9 +30,11 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      <body className="relative min-h-full flex flex-col">
         <ThemeToggle hideOnMailRoute />
-        {children}
+        <div className="relative z-10 flex min-h-full flex-1 flex-col">
+          {children}
+        </div>
       </body>
     </html>
   );

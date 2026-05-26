@@ -58,30 +58,30 @@ export default function MailViewSettingsPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen p-6">
       <div className="mx-auto max-w-3xl">
         <div className="mb-3">
-          <a href="/settings" className="text-sm text-gray-600 hover:underline">
+          <a href="/settings" className="text-sm glass-text-secondary hover:underline">
             ← Zurück zu Einstellungen
           </a>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">Mail-Ansicht</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="text-2xl font-semibold glass-text-primary">Mail-Ansicht</h1>
+        <p className="mt-1 text-sm glass-text-secondary">
           In der Posteingangsliste werden E-Mails seitenweise geladen. Wenn du nach unten scrollst,
           wird jeweils die hier gewählte Anzahl nachgeladen (bis alle Mails des aktuellen Filters
           geladen sind).
         </p>
 
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
-          {loading ? <p className="text-sm text-gray-600">Lade Einstellungen...</p> : null}
+        <div className="glass-card mt-6 rounded-xl p-4">
+          {loading ? <p className="text-sm glass-text-secondary">Lade Einstellungen...</p> : null}
           {error ? <p className="mb-2 text-sm text-red-600">{error}</p> : null}
-          {info ? <p className="mb-2 text-sm text-blue-800">{info}</p> : null}
+          {info ? <p className="mb-2 text-sm glass-info rounded-lg px-3 py-1.5">{info}</p> : null}
 
           {!loading ? (
             <label className="block text-sm">
-              <span className="font-medium text-gray-900">Mails pro Nachladen beim Scrollen</span>
+              <span className="font-medium glass-text-primary">Mails pro Nachladen beim Scrollen</span>
               <select
-                className="mt-2 w-full max-w-xs rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                className="glass-select mt-2 w-full max-w-xs rounded-lg px-3 py-2 text-sm"
                 disabled={saving}
                 value={batchSize}
                 onChange={(e) => {
@@ -96,7 +96,7 @@ export default function MailViewSettingsPage() {
                   </option>
                 ))}
               </select>
-              <span className="mt-2 block text-xs text-gray-500">
+              <span className="mt-2 block text-xs glass-text-tertiary">
                 Kleinere Werte: weniger Daten pro Anfrage. Größere Werte: seltener nachladen, dafür
                 etwas mehr auf einmal.
               </span>

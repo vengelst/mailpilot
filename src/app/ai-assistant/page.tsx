@@ -319,15 +319,15 @@ export default function AiAssistantPage() {
   }, [plan]);
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen p-6">
       <div className="mx-auto max-w-5xl">
         <div className="mb-2 flex items-center gap-2">
-          <a href="/mail" className="text-sm text-gray-600 hover:underline">
+          <a href="/mail" className="text-sm glass-text-secondary hover:underline">
             ← Zurück zur Mail
           </a>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">KI-Assistent</h1>
-        <p className="mt-1 max-w-3xl text-sm text-gray-600">
+        <h1 className="text-2xl font-semibold glass-text-primary">KI-Assistent</h1>
+        <p className="mt-1 max-w-3xl text-sm glass-text-secondary">
           Beschreibe in natürlicher Sprache, was die KI mit deinen E-Mails tun soll. Die KI erzeugt
           zuerst einen Plan — du bekommst eine Vorschau und entscheidest, ob er ausgeführt wird.
           Endgültige Löschungen sind nicht möglich — Papierkorb bedeutet nur ein Verschieben in den
@@ -336,12 +336,12 @@ export default function AiAssistantPage() {
 
         {providerStatus ? (
           <div
-            className={`mt-4 rounded-md border px-3 py-2 text-sm ${
+            className={`mt-4 rounded-lg glass px-3 py-2 text-sm ${
               providerStatus.provider === "mock"
-                ? "border-amber-300 bg-amber-50 text-amber-900"
+                ? "border-amber-300/40 text-amber-900 dark:text-amber-200"
                 : providerStatus.hasApiKey
-                  ? "border-green-300 bg-green-50 text-green-900"
-                  : "border-red-300 bg-red-50 text-red-900"
+                  ? "border-green-300/40 text-green-900 dark:text-green-200"
+                  : "border-red-300/40 text-red-900 dark:text-red-200"
             }`}
           >
             <p>
@@ -363,14 +363,14 @@ export default function AiAssistantPage() {
           </div>
         ) : null}
 
-        <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
+        <section className="mt-6 rounded-xl glass-solid p-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <label className="md:col-span-1">
-              <span className="block text-xs font-semibold text-gray-700">Konto</span>
+              <span className="block text-xs font-semibold glass-text-secondary">Konto</span>
               <select
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full glass-select rounded-lg px-2 py-1.5 text-sm"
               >
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -380,7 +380,7 @@ export default function AiAssistantPage() {
               </select>
             </label>
             <label className="md:col-span-1">
-              <span className="block text-xs font-semibold text-gray-700">Scope</span>
+              <span className="block text-xs font-semibold glass-text-secondary">Scope</span>
               <select
                 value={scope}
                 onChange={(e) =>
@@ -392,7 +392,7 @@ export default function AiAssistantPage() {
                       | "unanalyzed",
                   )
                 }
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full glass-select rounded-lg px-2 py-1.5 text-sm"
               >
                 <option value="current_folder">Aktueller Ordner</option>
                 <option value="all_folders">Alle Ordner</option>
@@ -401,12 +401,12 @@ export default function AiAssistantPage() {
               </select>
             </label>
             <label className={`md:col-span-1 ${scope === "current_folder" ? "" : "opacity-50"}`}>
-              <span className="block text-xs font-semibold text-gray-700">Ordner</span>
+              <span className="block text-xs font-semibold glass-text-secondary">Ordner</span>
               <select
                 value={folderPath}
                 onChange={(e) => setFolderPath(e.target.value)}
                 disabled={scope !== "current_folder"}
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50"
+                className="mt-1 w-full glass-select rounded-lg px-2 py-1.5 text-sm disabled:opacity-50"
               >
                 {folders.map((f) => (
                   <option key={f.path} value={f.path}>
@@ -416,7 +416,7 @@ export default function AiAssistantPage() {
               </select>
             </label>
             <label className="md:col-span-1">
-              <span className="block text-xs font-semibold text-gray-700">Zeitraum (Tage)</span>
+              <span className="block text-xs font-semibold glass-text-secondary">Zeitraum (Tage)</span>
               <input
                 type="number"
                 min={1}
@@ -426,11 +426,11 @@ export default function AiAssistantPage() {
                 onChange={(e) =>
                   setDaysBack(e.target.value === "" ? "" : Number(e.target.value))
                 }
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full glass-input rounded-lg px-2 py-1.5 text-sm"
               />
             </label>
             <label className="md:col-span-1">
-              <span className="block text-xs font-semibold text-gray-700">
+              <span className="block text-xs font-semibold glass-text-secondary">
                 Max. KI-Kandidaten
               </span>
               <input
@@ -439,9 +439,9 @@ export default function AiAssistantPage() {
                 max={2000}
                 value={maxCandidates}
                 onChange={(e) => setMaxCandidates(Number(e.target.value) || 50)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full glass-input rounded-lg px-2 py-1.5 text-sm"
               />
-              <span className="mt-1 block text-[10px] leading-tight text-gray-500">
+              <span className="mt-1 block text-[10px] leading-tight glass-text-tertiary">
                 Bei Aktionsaufträgen (sortieren, verschieben…) max. 200. Beim Zählen oder
                 Suchen ohne Limit — alle passenden Mails werden gezählt, höchstens 50
                 Beispiele angezeigt.
@@ -450,13 +450,13 @@ export default function AiAssistantPage() {
           </div>
 
           <label className="mt-4 block">
-            <span className="block text-xs font-semibold text-gray-700">Auftrag an die KI</span>
+            <span className="block text-xs font-semibold glass-text-secondary">Auftrag an die KI</span>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={4}
               placeholder="z.B.: Sortiere alle Rechnungen in den Ordner Rechnungen."
-              className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 w-full resize-y glass-input rounded-lg px-3 py-2 text-sm"
             />
           </label>
 
@@ -465,7 +465,7 @@ export default function AiAssistantPage() {
               <button
                 key={p}
                 onClick={() => setPrompt(p)}
-                className="rounded-full border border-gray-300 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50"
+                className="rounded-full glass-btn px-2 py-0.5 text-xs"
               >
                 {p}
               </button>
@@ -476,7 +476,7 @@ export default function AiAssistantPage() {
             <button
               onClick={() => void generatePlan()}
               disabled={busy || !prompt.trim()}
-              className="rounded-md bg-gray-900 px-3 py-2 text-sm text-white disabled:opacity-60"
+              className="glass-btn-dark rounded-lg px-3 py-2 text-sm disabled:opacity-60"
             >
               {busy && !plan ? "Erzeuge Plan..." : "Vorschau erzeugen"}
             </button>
@@ -484,33 +484,33 @@ export default function AiAssistantPage() {
               <button
                 onClick={() => void executePlan()}
                 disabled={busy || plan.actions.length === 0}
-                className="rounded-md border border-green-500 bg-green-500 px-3 py-2 text-sm text-white disabled:opacity-60"
+                className="glass-btn-primary rounded-lg px-3 py-2 text-sm disabled:opacity-60"
               >
                 {busy && plan ? "Führe aus..." : "Ausführen"}
               </button>
             ) : null}
           </div>
 
-          {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
+          {error ? <p className="mt-3 text-sm glass-error rounded-lg px-3 py-2">{error}</p> : null}
         </section>
 
         {plan && planMeta && (planMeta.kind === "count" || planMeta.kind === "search") ? (
-          <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-gray-900">
+          <section className="mt-6 rounded-xl glass-solid p-4">
+            <h2 className="text-sm font-semibold glass-text-primary">
               {planMeta.kind === "count" ? "Zähl-Ergebnis" : "Such-Ergebnis"}
             </h2>
-            <p className="mt-1 text-sm text-gray-700">{plan.summary}</p>
+            <p className="mt-1 text-sm glass-text-secondary">{plan.summary}</p>
             <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
-              <span className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-gray-700">
+              <span className="glass-badge">
                 Quelle: deterministische DB-Suche (kein KI-Aufruf)
               </span>
               {planMeta.promptFilter && planMeta.promptFilter.terms.length > 0 ? (
-                <span className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-gray-700">
+                <span className="glass-badge">
                   Suchbegriffe: {planMeta.promptFilter.terms.join(", ")}
                 </span>
               ) : null}
               {planMeta.promptFilter?.daysBack ? (
-                <span className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-gray-700">
+                <span className="glass-badge">
                   Zeitraum: {planMeta.promptFilter.daysBack} Tage
                 </span>
               ) : null}
@@ -518,17 +518,17 @@ export default function AiAssistantPage() {
 
             {planMeta.byFolder && planMeta.byFolder.length > 0 ? (
               <div className="mt-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <p className="text-xs font-semibold uppercase tracking-wide glass-text-tertiary">
                   Nach Ordnern
                 </p>
-                <ul className="mt-1 divide-y divide-gray-100 text-sm">
+                <ul className="mt-1 divide-y divide-white/10 text-sm">
                   {planMeta.byFolder.map((b) => (
                     <li
                       key={b.folderPath}
                       className="flex items-center justify-between py-1"
                     >
-                      <span className="truncate text-gray-800">{b.folderPath}</span>
-                      <span className="tabular-nums text-gray-600">{b.count}</span>
+                      <span className="truncate glass-text-primary">{b.folderPath}</span>
+                      <span className="tabular-nums glass-text-secondary">{b.count}</span>
                     </li>
                   ))}
                 </ul>
@@ -537,21 +537,21 @@ export default function AiAssistantPage() {
 
             {planMeta.bySender && planMeta.bySender.length > 0 ? (
               <div className="mt-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <p className="text-xs font-semibold uppercase tracking-wide glass-text-tertiary">
                   Top-Absender
                 </p>
-                <ul className="mt-1 divide-y divide-gray-100 text-sm">
+                <ul className="mt-1 divide-y divide-white/10 text-sm">
                   {planMeta.bySender.map((s, i) => (
                     <li key={i} className="flex items-center justify-between py-1">
-                      <span className="truncate text-gray-800">
+                      <span className="truncate glass-text-primary">
                         {s.fromName || s.fromEmail || "Unbekannt"}
                         {s.fromName && s.fromEmail ? (
-                          <span className="ml-1 text-xs text-gray-500">
+                          <span className="ml-1 text-xs glass-text-tertiary">
                             &lt;{s.fromEmail}&gt;
                           </span>
                         ) : null}
                       </span>
-                      <span className="tabular-nums text-gray-600">{s.count}</span>
+                      <span className="tabular-nums glass-text-secondary">{s.count}</span>
                     </li>
                   ))}
                 </ul>
@@ -560,21 +560,21 @@ export default function AiAssistantPage() {
 
             {planMeta.sampleEmails && planMeta.sampleEmails.length > 0 ? (
               <div className="mt-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <p className="text-xs font-semibold uppercase tracking-wide glass-text-tertiary">
                   Beispiel-Treffer (max. 20)
                 </p>
-                <ul className="mt-1 space-y-1 text-xs text-gray-700">
+                <ul className="mt-1 space-y-1 text-xs glass-text-secondary">
                   {planMeta.sampleEmails.map((m) => (
                     <li
                       key={m.id}
-                      className="rounded-md border border-gray-100 bg-gray-50 px-2 py-1"
+                      className="rounded-lg glass px-2 py-1"
                     >
                       <p className="truncate">
                         <span className="font-medium">
                           {m.subject || "(Ohne Betreff)"}
                         </span>
                       </p>
-                      <p className="truncate text-[11px] text-gray-500">
+                      <p className="truncate text-[11px] glass-text-tertiary">
                         {m.fromName || m.fromEmail || "Unbekannt"}
                         {" · "}
                         {m.folderPath}
@@ -591,37 +591,37 @@ export default function AiAssistantPage() {
         ) : null}
 
         {plan && planMeta?.kind === "plan" ? (
-          <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-gray-900">Plan-Vorschau</h2>
-            <p className="mt-1 text-sm text-gray-700">{plan.summary}</p>
+          <section className="mt-6 rounded-xl glass-solid p-4">
+            <h2 className="text-sm font-semibold glass-text-primary">Plan-Vorschau</h2>
+            <p className="mt-1 text-sm glass-text-secondary">{plan.summary}</p>
             <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
               <span
-                className={`rounded-full border px-2 py-0.5 ${
+                className={`glass-badge ${
                   planMeta.provider === "mock"
-                    ? "border-amber-300 bg-amber-50 text-amber-900"
-                    : "border-green-300 bg-green-50 text-green-900"
+                    ? "border-amber-300/40 text-amber-900 dark:text-amber-200"
+                    : "border-green-300/40 text-green-900 dark:text-green-200"
                 }`}
               >
                 Provider: {planMeta.provider}
               </span>
               {planMeta.promptFilter && planMeta.promptFilter.terms.length > 0 ? (
-                <span className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-gray-700">
+                <span className="glass-badge">
                   Suchbegriffe: {planMeta.promptFilter.terms.join(", ")}
                 </span>
               ) : null}
               {planMeta.promptFilter?.daysBack ? (
-                <span className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-gray-700">
+                <span className="glass-badge">
                   Zeitraum: {planMeta.promptFilter.daysBack} Tage
                 </span>
               ) : null}
             </div>
             {candidateCount !== null ? (
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="mt-2 text-xs glass-text-tertiary">
                 Auf Basis von {candidateCount} E-Mail-Kandidat(en).
               </p>
             ) : null}
             {plan.actions.length === 0 ? (
-              <p className="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-600">
+              <p className="mt-3 rounded-lg glass p-3 text-sm glass-text-secondary">
                 Keine Aktionen vorgeschlagen.
               </p>
             ) : (
@@ -629,12 +629,12 @@ export default function AiAssistantPage() {
                 {actionPreview.map((a) => (
                   <li
                     key={a.index}
-                    className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2"
+                    className="rounded-lg glass px-3 py-2"
                   >
                     <p>
                       <span className="font-semibold">{a.type}</span> · {a.text}
                     </p>
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs glass-text-tertiary">
                       mailId: {a.emailId} · confidence:{" "}
                       {(a.confidence * 100).toFixed(0)}%
                     </p>
@@ -646,15 +646,15 @@ export default function AiAssistantPage() {
         ) : null}
 
         {executionSummary ? (
-          <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-gray-900">Ergebnis der Ausführung</h2>
-            <p className="mt-1 text-sm text-gray-700">
+          <section className="mt-6 rounded-xl glass-solid p-4">
+            <h2 className="text-sm font-semibold glass-text-primary">Ergebnis der Ausführung</h2>
+            <p className="mt-1 text-sm glass-text-secondary">
               {executionSummary.executed} ausgeführt, {executionSummary.failed} fehlgeschlagen,{" "}
               {executionSummary.rejected} abgelehnt (von insgesamt {executionSummary.total}
               ).
             </p>
             {outcomes && outcomes.length > 0 ? (
-              <ul className="mt-3 space-y-1 text-xs text-gray-700">
+              <ul className="mt-3 space-y-1 text-xs glass-text-secondary">
                 {outcomes.map((o) => (
                   <li key={o.index}>
                     [{o.status}] {o.type} — {o.emailId}

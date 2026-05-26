@@ -4,19 +4,15 @@ import { markEmailSeen } from "@/server/imap/imapService";
 import { prisma } from "@/server/db/prisma";
 import { writeAuditLog } from "@/server/audit/auditLog";
 
-async function resolveId(params: Promise<{ id: string }> | { id: string }) {
-  return (await Promise.resolve(params)).id;
-}
-
 export async function POST(
   _req: Request,
-  context: { params: Promise<{ id: string }> | { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   const session = await getSessionFromCookies();
   if (!session) return fail("Unauthorized", 401);
 
   try {
-    const id = await resolveId(context.params);
+    const { id } = await context.params;
     const email = await prisma.emailIndex.findFirst({
       where: {
         id,

@@ -1,26 +1,8 @@
 import DOMPurify from "isomorphic-dompurify";
 
-/**
- * Sanitize HTML coming from an IMAP message before rendering it inside a
- * sandboxed iframe.
- *
- * Threats addressed:
- *   - Script execution (`<script>`, inline event handlers like `onerror`,
- *     `onclick`, `onload`)
- *   - `javascript:` and `vbscript:` pseudo-URLs in `href`/`src`
- *   - Active embedded content (`<iframe>`, `<object>`, `<embed>`, `<form>`,
- *     `<base>`, `<meta http-equiv="refresh">`)
- *   - Tracking pixels — external `<img>` references are rewritten to a
- *     blocked-image data URL so they cannot phone home automatically
- *
- * The result is still rendered inside `<iframe sandbox="">` (no allow-scripts,
- * no allow-forms, no allow-same-origin) — that is the second line of defence
- * against anything DOMPurify might miss.
- */
-
 const FORBIDDEN_TAGS = [
   "script",
-  "style", // dropped to keep mails predictable; CSS is still inlined via DOMPurify default
+  "style",
   "iframe",
   "object",
   "embed",
@@ -41,50 +23,46 @@ const FORBIDDEN_TAGS = [
   "canvas",
 ];
 
-// Transparent 1x1 PNG used to neutralize external <img> sources.
 const BLOCKED_PIXEL_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
-function rewriteExternalImages(): void {
-  // Hooks live on the DOMPurify singleton, but we register them only once per
-  // process. `(globalThis as any)` avoids the typing dance — DOMPurify's hook
-  // API expects `(this: any, node, ...) => void`.
-  const flag = "__mailpilotImgHookInstalled";
-  const dp = DOMPurify as unknown as Record<string, unknown>;
-  if (dp[flag]) return;
-  dp[flag] = true;
+let imgHookInstalled = false;
+let currentAllowExternal = false;
+
+function installImgHook(): void {
+  if (imgHookInstalled) return;
+  imgHookInstalled = true;
 
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
     if (!(node instanceof Element)) return;
 
     if (node.tagName === "IMG") {
       const src = node.getAttribute("src") ?? "";
-      // Allow inline data:image (e.g. embedded inline images), but neutralize
-      // anything that points to a remote host so trackers don't fire.
       const isInlineData = /^data:image\//i.test(src);
-      if (!isInlineData) {
+
+      if (!isInlineData && !currentAllowExternal) {
+        node.setAttribute("data-blocked-src", src);
         node.setAttribute("src", BLOCKED_PIXEL_DATA_URL);
-        node.setAttribute("data-mailpilot-blocked-src", src);
-        node.setAttribute("alt", "[externes Bild blockiert]");
+        node.removeAttribute("srcset");
+        node.removeAttribute("loading");
       }
-      // Defence in depth — disable lazy/eager loading triggers.
-      node.removeAttribute("srcset");
-      node.removeAttribute("loading");
     }
 
     if (node.tagName === "A") {
-      // Open in a new tab without leaking opener; keeps mailto:/https://
-      // working as long as DOMPurify already approved the URL.
       node.setAttribute("target", "_blank");
       node.setAttribute("rel", "noopener noreferrer nofollow");
     }
   });
 }
 
-rewriteExternalImages();
+installImgHook();
 
-export function sanitizeMailHtml(input: string | null | undefined): string {
+export function sanitizeMailHtml(
+  input: string | null | undefined,
+  options?: { allowExternalImages?: boolean },
+): string {
   if (!input) return "";
+  currentAllowExternal = options?.allowExternalImages ?? false;
   try {
     return DOMPurify.sanitize(input, {
       FORBID_TAGS: FORBIDDEN_TAGS,
@@ -104,12 +82,15 @@ export function sanitizeMailHtml(input: string | null | undefined): string {
         "formaction",
         "srcdoc",
       ],
-      ALLOW_DATA_ATTR: false,
-      // ALLOWED_URI_REGEXP rejects javascript:/vbscript: and most non-standard schemes.
-      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|cid|data):|#|\/)/i,
+      ALLOW_DATA_ATTR: true,
+      ALLOWED_URI_REGEXP: options?.allowExternalImages
+        ? /^(?:(?:https?|mailto|tel|cid|data):|#|\/)/i
+        : /^(?:(?:https?|mailto|tel|cid|data):|#|\/)/i,
     });
   } catch {
     return "";
+  } finally {
+    currentAllowExternal = false;
   }
 }
 
@@ -141,10 +122,6 @@ function htmlContainsAnchorTag(html: string): boolean {
   return /<a(\s|>|\/)/i.test(html);
 }
 
-/**
- * Nur Text zwischen Tags — keine bestehenden <a> doppelt wrappen.
- * Split ist fuer typische Mails ausreichend (keine '>' in Attributwerten).
- */
 function linkifyBareUrlsBetweenTags(html: string): string {
   return html
     .split(/(<[^>]+>)/g)
@@ -163,28 +140,77 @@ function linkifyBareUrlsBetweenTags(html: string): string {
     .join("");
 }
 
-/**
- * Wraps the sanitized email HTML in a minimal document with a tight
- * Content-Security-Policy meta tag so even broken sandbox handling can't
- * fetch remote scripts/frames.
- */
-export function buildSafeMailDocument(rawHtml: string | null | undefined): string {
-  const firstPass = sanitizeMailHtml(rawHtml);
+export interface SafeMailOptions {
+  allowExternalImages?: boolean;
+}
+
+export function buildSafeMailDocument(
+  rawHtml: string | null | undefined,
+  options?: SafeMailOptions,
+): string {
+  const allowImg = options?.allowExternalImages ?? false;
+  const firstPass = sanitizeMailHtml(rawHtml, { allowExternalImages: allowImg });
   const withLinks =
     firstPass && !htmlContainsAnchorTag(firstPass)
       ? linkifyBareUrlsBetweenTags(firstPass)
       : firstPass;
-  const safeBody = withLinks !== firstPass ? sanitizeMailHtml(withLinks) : firstPass;
+  const safeBody = withLinks !== firstPass
+    ? sanitizeMailHtml(withLinks, { allowExternalImages: allowImg })
+    : firstPass;
+
+  const imgCSP = allowImg ? "img-src data: https: http:;" : "img-src data:;";
+
+  const blockedImgStyle = allowImg
+    ? ""
+    : `
+img[data-blocked-src]{
+  display:inline-block;
+  min-width:120px;
+  min-height:48px;
+  background:#f0f4f8;
+  border:1px dashed #94a3b8;
+  border-radius:6px;
+  position:relative;
+  vertical-align:middle;
+}
+img[data-blocked-src]::after{
+  content:"\\1F5BC  Bild blockiert";
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:#64748b;
+  background:#f0f4f8;border-radius:6px;
+  padding:4px 8px;text-align:center;
+}`;
+
   return `<!doctype html>
 <html><head><meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-src 'none'; script-src 'none';" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; ${imgCSP} style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-src 'none'; script-src 'unsafe-inline';" />
 <style>
-/* Newsletter-CSS neutralisieren; iOS: Touch-Scroll im iframe */
-html{height:auto!important;max-height:none!important;overflow-x:hidden!important;overflow-y:scroll;-webkit-overflow-scrolling:touch}
-body{height:auto!important;max-height:none!important;min-height:min-content;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;font-family:Arial,Helvetica,sans-serif;color:#111;margin:12px;font-size:14px;line-height:1.5;box-sizing:border-box}
+html{height:auto!important;max-height:none!important;overflow-x:hidden!important;overflow-y:auto;-webkit-overflow-scrolling:touch}
+body{height:auto!important;max-height:none!important;min-height:min-content;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1e293b;margin:0;padding:12px;font-size:14px;line-height:1.6;box-sizing:border-box;word-wrap:break-word;overflow-wrap:break-word}
 *,*::before,*::after{box-sizing:inherit}
-img{max-width:100%;height:auto}
-a{color:#1d4ed8}
+img{max-width:100%!important;height:auto!important}
+table{max-width:100%!important;width:auto!important;table-layout:fixed!important}
+td,th{max-width:100%!important;word-wrap:break-word!important;overflow-wrap:break-word!important}
+div,section,article,header,footer,aside,main,nav{max-width:100%!important;overflow-x:hidden!important}
+a{color:#2563eb}
+a:hover{color:#1d4ed8}
+pre,code{max-width:100%!important;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word}
+${blockedImgStyle}
 </style>
-</head><body>${safeBody}</body></html>`;
+</head><body>${safeBody}
+<script>
+document.addEventListener("click",function(e){
+  var a=e.target;
+  while(a&&a.tagName!=="A")a=a.parentElement;
+  if(!a)return;
+  var href=a.getAttribute("href");
+  if(!href)return;
+  e.preventDefault();
+  e.stopPropagation();
+  parent.postMessage({type:"mailpilot-link-click",href:href},"*");
+},true);
+</script>
+</body></html>`;
 }

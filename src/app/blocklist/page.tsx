@@ -53,37 +53,37 @@ export default function BlocklistPage() {
   return (
     <main className="min-h-screen p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Blockliste</h1>
+        <h1 className="text-xl font-semibold glass-text-primary">Blockliste</h1>
         <button
           onClick={() => void loadEntries()}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm"
         >
           Aktualisieren
         </button>
       </div>
 
-      {loading ? <p className="text-sm text-gray-600">Lade Blockliste...</p> : null}
+      {loading ? <p className="text-sm glass-text-secondary">Lade Blockliste...</p> : null}
 
       <ul className="space-y-2">
         {entries.map((entry) => (
-          <li key={entry.id} className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-sm font-medium">
+          <li key={entry.id} className="glass-card rounded-xl p-3">
+            <p className="text-sm font-medium glass-text-primary">
               {entry.email ? `E-Mail: ${entry.email}` : `Domain: ${entry.domain}`}
             </p>
-            <p className="text-xs text-gray-600">
+            <p className="text-xs glass-text-secondary">
               Aktion: {entry.action} | Status: {entry.active ? "aktiv" : "inaktiv"}
             </p>
-            {entry.note ? <p className="mt-1 text-xs text-gray-600">Notiz: {entry.note}</p> : null}
+            {entry.note ? <p className="mt-1 text-xs glass-text-secondary">Notiz: {entry.note}</p> : null}
             <div className="mt-2 flex gap-2">
               <button
                 onClick={() => void toggleActive(entry)}
-                className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+                className="glass-btn rounded-lg px-2 py-1 text-xs"
               >
                 {entry.active ? "Deaktivieren" : "Aktivieren"}
               </button>
               <button
                 onClick={() => void removeEntry(entry.id)}
-                className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+                className="glass-btn rounded-lg px-2 py-1 text-xs"
               >
                 Löschen
               </button>
@@ -93,7 +93,7 @@ export default function BlocklistPage() {
       </ul>
 
       {!loading && entries.length === 0 ? (
-        <p className="text-sm text-gray-600">Keine blockierten Absender oder Domains vorhanden.</p>
+        <p className="text-sm glass-text-secondary">Keine blockierten Absender oder Domains vorhanden.</p>
       ) : null}
     </main>
   );

@@ -138,13 +138,20 @@ function collectAttachments(structure: unknown, output: ImapAttachmentMeta[] = [
 }
 
 async function parseMailSource(source?: Buffer) {
-  if (!source) return { text: "", html: "" };
+  if (!source) {
+    console.warn("[parseMailSource] No source buffer received from IMAP");
+    return { text: "", html: "" };
+  }
   try {
     const parsed = await simpleParser(source);
     const text = (parsed.text ?? "").trim();
     const html = typeof parsed.html === "string" ? parsed.html : "";
+    if (!text && !html) {
+      console.warn(`[parseMailSource] Parsed source (${source.length} bytes) yielded no text/html`);
+    }
     return { text, html };
-  } catch {
+  } catch (err) {
+    console.error("[parseMailSource] Failed to parse mail source:", err);
     return { text: "", html: "" };
   }
 }
@@ -653,18 +660,136 @@ export async function fetchMessageBody(
   try {
     await client.connect();
     await client.mailboxOpen(folderPath);
-    const message = (await client.fetchOne(
-      uid.toString(),
-      { source: true } as never,
-      { uid: true } as never,
-    )) as unknown as { source?: Buffer };
 
-    const parsed = await parseMailSource(message?.source);
-    return {
-      text: parsed.text,
-      html: parsed.html,
-      textFromHtml: parsed.text || htmlToPlainText(parsed.html),
-    };
+    // Try fetching source by UID
+    for await (const msg of client.fetch(
+      uid.toString(),
+      { uid: true, source: true } as never,
+      { uid: true } as never,
+    )) {
+      const raw = msg as unknown as Record<string, unknown>;
+      const source = await readBinaryPayload(raw.source);
+      if (source && source.length > 0) {
+        const parsed = await parseMailSource(source);
+        return {
+          text: parsed.text,
+          html: parsed.html,
+          textFromHtml: parsed.text || htmlToPlainText(parsed.html),
+        };
+      }
+    }
+
+    // Fallback: download() full message
+    try {
+      const downloaded = await client.download(uid.toString(), undefined, { uid: true });
+      const dlAny = downloaded as unknown as Record<string, unknown>;
+      const contentStream = dlAny?.content;
+      if (contentStream) {
+        const buf = await readBinaryPayload(contentStream);
+        if (buf && buf.length > 0) {
+          const parsed = await parseMailSource(buf);
+          return {
+            text: parsed.text,
+            html: parsed.html,
+            textFromHtml: parsed.text || htmlToPlainText(parsed.html),
+          };
+        }
+      }
+    } catch {
+      // download fallback failed
+    }
+
+    console.warn(`[fetchMessageBody] UID ${uid} not found in ${folderPath}`);
+    return { text: "", html: "", textFromHtml: "" };
+  } finally {
+    if (client.usable) {
+      await client.logout();
+    }
+  }
+}
+
+export async function resolveUidByMessageId(
+  config: ImapAccountConfig,
+  folderPath: string,
+  messageId: string,
+): Promise<bigint | null> {
+  const client = buildClient(config);
+  try {
+    await client.connect();
+    await client.mailboxOpen(folderPath);
+
+    const cleanId = messageId.replace(/^<|>$/g, "");
+    const results = await client.search(
+      { header: { "message-id": cleanId } } as never,
+      { uid: true } as never,
+    );
+
+    if (!results || (Array.isArray(results) && results.length === 0)) {
+      const bracketedResults = await client.search(
+        { header: { "message-id": `<${cleanId}>` } } as never,
+        { uid: true } as never,
+      );
+      if (bracketedResults && Array.isArray(bracketedResults) && bracketedResults.length > 0) {
+        return BigInt(bracketedResults[0]);
+      }
+      return null;
+    }
+
+    if (Array.isArray(results) && results.length > 0) {
+      return BigInt(results[0]);
+    }
+    return null;
+  } catch (e) {
+    console.warn(`[resolveUidByMessageId] search failed for "${messageId}":`, e);
+    return null;
+  } finally {
+    if (client.usable) {
+      await client.logout();
+    }
+  }
+}
+
+export async function searchUidBySubjectDate(
+  config: ImapAccountConfig,
+  folderPath: string,
+  subject: string,
+  date: Date,
+): Promise<bigint | null> {
+  const client = buildClient(config);
+  try {
+    await client.connect();
+    await client.mailboxOpen(folderPath);
+
+    const onDate = new Date(date);
+    onDate.setHours(0, 0, 0, 0);
+
+    const results = await client.search(
+      { on: onDate, subject: subject.slice(0, 80) } as never,
+      { uid: true } as never,
+    );
+
+    if (Array.isArray(results) && results.length > 0) {
+      return BigInt(results[results.length - 1]);
+    }
+
+    const before = new Date(onDate);
+    before.setDate(before.getDate() + 2);
+    const after = new Date(onDate);
+    after.setDate(after.getDate() - 1);
+
+    const widerResults = await client.search(
+      { since: after, before, subject: subject.slice(0, 40) } as never,
+      { uid: true } as never,
+    );
+
+    if (Array.isArray(widerResults) && widerResults.length > 0) {
+      return BigInt(widerResults[widerResults.length - 1]);
+    }
+
+    return null;
+  } catch (e) {
+    console.warn(`[searchUidBySubjectDate] failed:`, e);
+    return null;
   } finally {
     if (client.usable) {
       await client.logout();

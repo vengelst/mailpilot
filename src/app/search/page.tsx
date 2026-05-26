@@ -278,38 +278,38 @@ export default function SearchPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen p-6">
       <div className="mx-auto max-w-6xl">
         <div className="mb-2 flex items-center gap-2">
-          <a href="/mail" className="text-sm text-gray-600 hover:underline">
+          <a href="/mail" className="text-sm glass-text-secondary hover:underline">
             ← Zurück zur Mail
           </a>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">Erweiterte Suche</h1>
+        <h1 className="text-2xl font-semibold glass-text-primary">Erweiterte Suche</h1>
 
         <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3 lg:grid-cols-4">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Suchbegriff (z.B. datev)"
-            className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
+            className="glass-input px-3 py-2 text-sm"
           />
           <input
             value={accountId}
             onChange={(e) => setAccountId(e.target.value)}
             placeholder="Account ID (optional)"
-            className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
+            className="glass-input px-3 py-2 text-sm"
           />
           <input
             value={folder}
             onChange={(e) => setFolder(e.target.value)}
             placeholder="Ordner (optional)"
-            className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
+            className="glass-input px-3 py-2 text-sm"
           />
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
-            className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
+            className="glass-select px-3 py-2 text-sm"
           >
             <option value="date_desc">Neueste zuerst</option>
             <option value="date_asc">Älteste zuerst</option>
@@ -322,7 +322,7 @@ export default function SearchPage() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            className="glass-select px-2 py-1 text-xs"
           >
             <option value="">Kategorie: alle</option>
             <option value="invoice">invoice</option>
@@ -338,7 +338,7 @@ export default function SearchPage() {
           <select
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            className="glass-select px-2 py-1 text-xs"
           >
             <option value="">Priorität: alle</option>
             <option value="low">low</option>
@@ -349,7 +349,7 @@ export default function SearchPage() {
           <select
             value={isRead}
             onChange={(e) => setIsRead(e.target.value as "" | "true" | "false")}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            className="glass-select px-2 py-1 text-xs"
           >
             <option value="">Lesestatus: alle</option>
             <option value="false">ungelesen</option>
@@ -360,7 +360,7 @@ export default function SearchPage() {
             onChange={(e) =>
               setHasAttachments(e.target.value as "" | "true" | "false")
             }
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            className="glass-select px-2 py-1 text-xs"
           >
             <option value="">Anhänge: alle</option>
             <option value="true">mit Anhängen</option>
@@ -371,7 +371,7 @@ export default function SearchPage() {
             onChange={(e) =>
               setActionRequired(e.target.value as "" | "true" | "false")
             }
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            className="glass-select px-2 py-1 text-xs"
           >
             <option value="">Aktion: alle</option>
             <option value="true">actionRequired</option>
@@ -380,7 +380,7 @@ export default function SearchPage() {
           <select
             value={limit}
             onChange={(e) => setLimit(Number(e.target.value) as LimitOption)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            className="glass-select px-2 py-1 text-xs"
             title="Wie viele Mails maximal in der Trefferliste laden"
           >
             {LIMIT_OPTIONS.map((v) => (
@@ -391,41 +391,41 @@ export default function SearchPage() {
           </select>
           <button
             onClick={() => void runSearch()}
-            className="rounded bg-gray-900 px-3 py-1 text-xs text-white"
+            className="glass-btn-dark px-3 py-1 text-xs"
           >
             Suchen
           </button>
         </div>
 
         {error ? (
-          <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="glass-error mt-3 px-3 py-2 text-sm">
             {error}
           </p>
         ) : null}
 
         {stats ? (
           <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
-            <div className="rounded border border-gray-200 bg-white p-3 text-sm">
-              <p className="text-gray-500">Gesamt</p>
-              <p className="text-lg font-semibold tabular-nums">
+            <div className="glass-card p-3 text-sm">
+              <p className="glass-text-muted">Gesamt</p>
+              <p className="text-lg font-semibold tabular-nums glass-text-primary">
                 {stats.total.toLocaleString("de-DE")}
               </p>
             </div>
-            <div className="rounded border border-gray-200 bg-white p-3 text-sm">
-              <p className="text-gray-500">Ungelesen</p>
-              <p className="text-lg font-semibold tabular-nums">
+            <div className="glass-card p-3 text-sm">
+              <p className="glass-text-muted">Ungelesen</p>
+              <p className="text-lg font-semibold tabular-nums glass-text-primary">
                 {stats.unreadTotal.toLocaleString("de-DE")}
               </p>
             </div>
-            <div className="rounded border border-gray-200 bg-white p-3 text-sm">
-              <p className="text-gray-500">Anhänge</p>
-              <p className="text-lg font-semibold tabular-nums">
+            <div className="glass-card p-3 text-sm">
+              <p className="glass-text-muted">Anhänge</p>
+              <p className="text-lg font-semibold tabular-nums glass-text-primary">
                 {stats.attachmentsTotal.toLocaleString("de-DE")}
               </p>
             </div>
-            <div className="rounded border border-gray-200 bg-white p-3 text-sm">
-              <p className="text-gray-500">Aktion erforderlich</p>
-              <p className="text-lg font-semibold tabular-nums">
+            <div className="glass-card p-3 text-sm">
+              <p className="glass-text-muted">Aktion erforderlich</p>
+              <p className="text-lg font-semibold tabular-nums glass-text-primary">
                 {stats.actionRequiredTotal.toLocaleString("de-DE")}
               </p>
             </div>
@@ -433,16 +433,16 @@ export default function SearchPage() {
         ) : null}
 
         {loading ? (
-          <p className="mt-4 text-sm text-gray-600">Suche läuft...</p>
+          <p className="mt-4 text-sm glass-text-secondary">Suche läuft...</p>
         ) : null}
 
         <div className="mt-6 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-900">
+          <h2 className="text-sm font-semibold glass-text-primary">
             Treffer nach Ordnern
           </h2>
           {folderGroups.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              <label className="flex items-center gap-1 text-xs text-gray-700">
+              <label className="flex items-center gap-1 text-xs glass-text-secondary">
                 <input
                   type="checkbox"
                   checked={
@@ -461,13 +461,13 @@ export default function SearchPage() {
               </label>
               <button
                 onClick={expandAll}
-                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                className="glass-btn px-2 py-1 text-xs"
               >
                 Alle aufklappen
               </button>
               <button
                 onClick={collapseAll}
-                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                className="glass-btn px-2 py-1 text-xs"
               >
                 Alle zuklappen
               </button>
@@ -476,35 +476,35 @@ export default function SearchPage() {
         </div>
 
         {selectedIds.size > 0 ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs">
-            <span className="font-medium text-blue-900">
+          <div className="glass-info mt-3 flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+            <span className="font-medium">
               {selectedIds.size} ausgewählt (von {rows.length} geladenen Treffern)
             </span>
             <button
               disabled={bulkBusy}
               onClick={() => void runBulk("mark_read")}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+              className="glass-btn px-2 py-1 disabled:opacity-50"
             >
               Gelesen
             </button>
             <button
               disabled={bulkBusy}
               onClick={() => void runBulk("mark_unread")}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+              className="glass-btn px-2 py-1 disabled:opacity-50"
             >
               Ungelesen
             </button>
             <button
               disabled={bulkBusy}
               onClick={() => void runBulk("move_trash")}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+              className="glass-btn px-2 py-1 disabled:opacity-50"
             >
               Papierkorb
             </button>
             <button
               disabled={bulkBusy}
               onClick={() => void runBulk("move_spam")}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1 disabled:opacity-50"
+              className="glass-btn px-2 py-1 disabled:opacity-50"
             >
               Spam
             </button>
@@ -512,19 +512,19 @@ export default function SearchPage() {
               value={moveTarget}
               onChange={(e) => setMoveTarget(e.target.value)}
               placeholder="Verschieben nach Pfad…"
-              className="min-w-[160px] rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-900 placeholder:text-slate-500"
+              className="glass-input min-w-[160px] px-2 py-1"
             />
             <button
               disabled={bulkBusy || !moveTarget}
               onClick={() => void runBulk("move_folder", moveTarget)}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn px-2 py-1 disabled:opacity-50"
             >
               Verschieben
             </button>
             <button
               disabled={bulkBusy || selectedIds.size !== 1}
               onClick={bulkForward}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn px-2 py-1 disabled:opacity-50"
               title={
                 selectedIds.size === 1
                   ? "Diese E-Mail weiterleiten"
@@ -535,7 +535,7 @@ export default function SearchPage() {
             </button>
             <button
               onClick={clearSelection}
-              className="ml-auto rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700"
+              className="glass-btn ml-auto px-2 py-1"
             >
               Auswahl aufheben
             </button>
@@ -543,7 +543,7 @@ export default function SearchPage() {
         ) : null}
 
         {!loading && folderGroups.length === 0 ? (
-          <p className="mt-3 rounded-md border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+          <p className="glass mt-3 rounded-lg border border-dashed border-white/20 p-4 text-sm glass-text-muted">
             Keine Treffer für die aktuellen Filter.
           </p>
         ) : null}
@@ -558,9 +558,9 @@ export default function SearchPage() {
             return (
               <li
                 key={group.folderPath}
-                className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+                className="glass overflow-hidden rounded-lg"
               >
-                <div className="flex w-full items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-sm">
+                <div className="flex w-full items-center gap-2 border-b border-white/10 bg-white/5 px-3 py-2 text-sm">
                   <label
                     className="flex shrink-0 cursor-pointer items-center"
                     onClick={(e) => e.stopPropagation()}
@@ -591,29 +591,29 @@ export default function SearchPage() {
                   </label>
                   <button
                     onClick={() => toggleFolder(group.folderPath)}
-                    className="flex flex-1 items-center gap-2 text-left hover:bg-gray-100"
+                    className="flex flex-1 items-center gap-2 text-left hover:bg-white/30 rounded"
                   >
-                  <span className="w-4 text-gray-500">
+                  <span className="w-4 glass-text-muted">
                     {isCollapsed ? "▸" : "▾"}
                   </span>
-                  <span className="flex-1 truncate font-medium text-gray-900">
+                  <span className="flex-1 truncate font-medium glass-text-primary">
                     {group.folderPath}
                   </span>
-                  <span className="shrink-0 text-xs tabular-nums text-gray-700">
+                  <span className="shrink-0 text-xs tabular-nums glass-text-secondary">
                     {group.count.toLocaleString("de-DE")} Treffer
                   </span>
                   {group.unreadCount > 0 ? (
-                    <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-800">
+                    <span className="glass-badge-accent shrink-0 text-[10px]">
                       {group.unreadCount} ungelesen
                     </span>
                   ) : null}
                   {group.attachmentsCount > 0 ? (
-                    <span className="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] text-gray-700">
+                    <span className="glass-badge shrink-0 text-[10px]">
                       {group.attachmentsCount} mit Anhang
                     </span>
                   ) : null}
                   {group.actionRequiredCount > 0 ? (
-                    <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-800">
+                    <span className="shrink-0 rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">
                       {group.actionRequiredCount} Aktion
                     </span>
                   ) : null}
@@ -629,7 +629,7 @@ export default function SearchPage() {
                       </p>
                     ) : null}
                     {loadedInFolder === 0 ? (
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs glass-text-muted">
                         Keine Beispieltreffer geladen — Trefferanzahl höher setzen
                         oder Filter ändern.
                       </p>
@@ -640,10 +640,10 @@ export default function SearchPage() {
                           return (
                           <li
                             key={row.id}
-                            className={`flex items-start gap-2 rounded border px-2 py-2 ${
+                            className={`flex items-start gap-2 rounded-lg px-2 py-2 ${
                               checked
-                                ? "border-blue-200 bg-blue-50"
-                                : "border-gray-100 bg-white"
+                                ? "glass-selected"
+                                : "bg-white/5 hover:bg-white/10"
                             }`}
                           >
                             <label
@@ -662,10 +662,10 @@ export default function SearchPage() {
                               className="flex-1 text-left"
                             >
                             <div className="flex items-baseline justify-between gap-2">
-                              <p className="truncate font-medium text-gray-900">
+                              <p className="truncate font-medium glass-text-primary">
                                 {row.subject || "(Ohne Betreff)"}
                               </p>
-                              <p className="shrink-0 text-right text-[11px] text-gray-500">
+                              <p className="shrink-0 text-right text-[11px] glass-text-muted">
                                 <span className="block">
                                   Eingang: {formatDateTime(row.createdAt)}
                                 </span>
@@ -674,38 +674,38 @@ export default function SearchPage() {
                                 </span>
                               </p>
                             </div>
-                            <p className="truncate text-xs text-gray-600">
+                            <p className="truncate text-xs glass-text-secondary">
                               {row.fromName || row.fromEmail || "Unbekannt"}
                             </p>
                             <div className="mt-1 flex flex-wrap gap-1 text-[10px]">
                               {!row.isRead ? (
-                                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">
+                                <span className="glass-badge-accent">
                                   ungelesen
                                 </span>
                               ) : null}
                               {row.hasAttachments ? (
-                                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">
+                                <span className="glass-badge">
                                   📎
                                 </span>
                               ) : null}
                               {row.aiCategory ? (
-                                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">
+                                <span className="glass-badge-accent">
                                   {row.aiCategory}
                                 </span>
                               ) : null}
                               {row.aiPriority && row.aiPriority !== "normal" ? (
-                                <span className="rounded bg-orange-50 px-1.5 py-0.5 text-orange-700">
+                                <span className="rounded-full bg-orange-500/20 px-1.5 py-0.5 text-orange-300">
                                   {row.aiPriority}
                                 </span>
                               ) : null}
                               {row.actionRequired ? (
-                                <span className="rounded bg-red-50 px-1.5 py-0.5 text-red-700">
+                                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-red-300">
                                   Aktion
                                 </span>
                               ) : null}
                             </div>
                             {row.snippet ? (
-                              <p className="mt-1 line-clamp-2 text-xs text-gray-500">
+                              <p className="mt-1 line-clamp-2 text-xs glass-text-tertiary">
                                 {row.snippet}
                               </p>
                             ) : null}

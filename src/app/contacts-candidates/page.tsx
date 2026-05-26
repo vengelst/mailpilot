@@ -73,8 +73,8 @@ export default function ContactCandidatesPage() {
 
   return (
     <main className="min-h-screen p-6">
-      <h1 className="text-xl font-semibold">Kontaktkandidaten</h1>
-      <p className="mt-2 text-sm text-gray-600">
+      <h1 className="text-xl font-semibold glass-text-primary">Kontaktkandidaten</h1>
+      <p className="mt-2 text-sm glass-text-secondary">
         Export nach Google Contacts nur nach expliziter Benutzeraktion.
       </p>
 
@@ -86,8 +86,8 @@ export default function ContactCandidatesPage() {
               setStatus(filter.id);
               void loadCandidates(filter.id);
             }}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
-              status === filter.id ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300"
+            className={`rounded-lg px-3 py-1.5 text-sm ${
+              status === filter.id ? "glass-btn-dark" : "glass-btn"
             }`}
           >
             {filter.label}
@@ -96,17 +96,17 @@ export default function ContactCandidatesPage() {
       </div>
 
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
-      {loading ? <p className="mt-3 text-sm text-gray-600">Lade Kandidaten...</p> : null}
+      {loading ? <p className="mt-3 text-sm glass-text-secondary">Lade Kandidaten...</p> : null}
 
       <ul className="mt-4 space-y-3">
         {candidates.map((candidate) => (
-          <li key={candidate.id} className="rounded-lg border border-gray-200 bg-white p-3 text-sm">
-            <p className="font-medium">{candidate.personName || candidate.email || "Unbekannter Kontakt"}</p>
-            <p className="text-xs text-gray-600">
+          <li key={candidate.id} className="glass-card rounded-xl p-3 text-sm">
+            <p className="font-medium glass-text-primary">{candidate.personName || candidate.email || "Unbekannter Kontakt"}</p>
+            <p className="text-xs glass-text-secondary">
               Status: {candidate.status}
               {candidate.googleContactId ? ` | Google ID: ${candidate.googleContactId}` : ""}
             </p>
-            <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-gray-700 md:grid-cols-2">
+            <div className="mt-2 grid grid-cols-1 gap-1 text-xs glass-text-secondary md:grid-cols-2">
               <p>Firma: {candidate.companyName || "-"}</p>
               <p>E-Mail: {candidate.email || "-"}</p>
               <p>Telefon: {candidate.phone || "-"}</p>
@@ -119,19 +119,19 @@ export default function ContactCandidatesPage() {
               <button
                 onClick={() => void runAction(candidate.id, "export-google")}
                 disabled={candidate.status === "exported"}
-                className="rounded-md border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
+                className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
               >
                 Nach Google Contacts exportieren
               </button>
               <button
                 onClick={() => void runAction(candidate.id, "ignore")}
-                className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+                className="glass-btn rounded-lg px-2 py-1 text-xs"
               >
                 Ignorieren
               </button>
               <button
                 onClick={() => void runAction(candidate.id, "mark-duplicate")}
-                className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+                className="glass-btn rounded-lg px-2 py-1 text-xs"
               >
                 Als Dublette markieren
               </button>
@@ -141,7 +141,7 @@ export default function ContactCandidatesPage() {
       </ul>
 
       {!loading && candidates.length === 0 ? (
-        <p className="text-sm text-gray-500">Keine Kontaktkandidaten für den gewählten Filter.</p>
+        <p className="text-sm glass-text-tertiary">Keine Kontaktkandidaten für den gewählten Filter.</p>
       ) : null}
     </main>
   );

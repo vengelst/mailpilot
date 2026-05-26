@@ -54,7 +54,7 @@ export function ThemeToggle({ className, hideOnMailRoute = false }: ThemeToggleP
       onClick={toggleTheme}
       className={
         className ??
-        "fixed right-4 top-4 z-50 rounded-full border border-gray-300 bg-white p-2 text-gray-900 shadow-sm hover:bg-gray-100"
+        "glass-btn fixed right-4 top-4 z-50 rounded-full p-2.5"
       }
       aria-label={isLight ? "Dunkelmodus aktivieren" : "Hellmodus aktivieren"}
       title={isLight ? "Dunkelmodus" : "Hellmodus"}

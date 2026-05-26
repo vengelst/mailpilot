@@ -7,11 +7,14 @@ import {
   fetchMessageBody,
   fetchMessagesByUidRange,
   getMailboxStatus,
+  type ImapAccountConfig,
   ImapMessageMeta,
   listImapFolders,
   moveMessage,
   moveMessageToSpecialFolder,
   purgeFolderMessages,
+  resolveUidByMessageId,
+  searchUidBySubjectDate,
   setMessageSeen,
   testImapConnection,
 } from "@/server/imap/imapClient";
@@ -549,6 +552,23 @@ export async function moveIndexedEmailToSpecial(
  * `{ force: true }` to bypass the cache (e.g. when the user explicitly
  * requests a refresh). NEVER touch IMAP messages — read-only fetch only.
  */
+async function resolveCorrectUid(
+  config: ImapAccountConfig,
+  email: { messageId: string | null; folderPath: string; imapUid: bigint; subject?: string | null; date?: Date | null },
+): Promise<bigint | null> {
+  if (email.messageId) {
+    const uid = await resolveUidByMessageId(config, email.folderPath, email.messageId);
+    if (uid) return uid;
+  }
+
+  if (email.subject && email.date) {
+    const uid = await searchUidBySubjectDate(config, email.folderPath, email.subject, email.date);
+    if (uid) return uid;
+  }
+
+  return null;
+}
+
 export async function loadMessageBody(
   emailId: string,
   userId: string,
@@ -561,6 +581,9 @@ export async function loadMessageBody(
       accountId: true,
       folderPath: true,
       imapUid: true,
+      messageId: true,
+      subject: true,
+      date: true,
       bodyText: true,
       bodyHtml: true,
       bodyPlain: true,
@@ -569,7 +592,8 @@ export async function loadMessageBody(
   });
   if (!email) throw new Error("Email not found");
 
-  if (!options?.force && email.bodyFetchedAt) {
+  const cachedEmpty = email.bodyFetchedAt && !email.bodyHtml && !email.bodyText;
+  if (!options?.force && email.bodyFetchedAt && !cachedEmpty) {
     return {
       text: email.bodyText ?? "",
       html: email.bodyHtml ?? "",
@@ -579,7 +603,21 @@ export async function loadMessageBody(
   }
 
   const { config } = await getAccountConfig(email.accountId, userId);
-  const body = await fetchMessageBody(config, email.folderPath, email.imapUid);
+
+  let body = await fetchMessageBody(config, email.folderPath, email.imapUid);
+
+  if (!body.text && !body.html) {
+    const resolvedUid = await resolveCorrectUid(config, email);
+    if (resolvedUid && resolvedUid !== email.imapUid) {
+      console.log(`[loadMessageBody] UID resolved: ${email.imapUid} → ${resolvedUid}`);
+      await prisma.emailIndex.update({
+        where: { id: email.id },
+        data: { imapUid: resolvedUid },
+      });
+      body = await fetchMessageBody(config, email.folderPath, resolvedUid);
+    }
+  }
+
   await prisma.emailIndex.update({
     where: { id: email.id },
     data: {

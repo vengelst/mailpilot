@@ -30,40 +30,46 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
-      <div className="mx-auto mt-20 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold text-gray-900">MailPilot Login</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Beim ersten Login wird automatisch der erste lokale Benutzer angelegt.
-        </p>
+    <main className="flex min-h-screen items-center justify-center p-6">
+      <div className="glass-card w-full max-w-md p-8">
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-semibold glass-text-primary">MailPilot</h1>
+          <p className="mt-2 text-sm glass-text-secondary">
+            Beim ersten Login wird automatisch der erste lokale Benutzer angelegt.
+          </p>
+        </div>
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        <form onSubmit={onSubmit} className="space-y-5">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">E-Mail</label>
+            <label className="mb-1.5 block text-sm font-medium glass-text-secondary">E-Mail</label>
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               type="email"
               required
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-gray-700"
+              className="glass-input w-full rounded-xl px-4 py-2.5 text-sm"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Passwort</label>
+            <label className="mb-1.5 block text-sm font-medium glass-text-secondary">Passwort</label>
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
               minLength={6}
               required
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-gray-700"
+              className="glass-input w-full rounded-xl px-4 py-2.5 text-sm"
             />
           </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {error ? (
+            <div className="glass-error rounded-xl px-4 py-2.5 text-sm text-red-600">
+              {error}
+            </div>
+          ) : null}
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-gray-900 px-3 py-2 text-white disabled:opacity-60"
+            className="glass-btn-primary w-full rounded-xl px-4 py-2.5 text-sm font-medium"
           >
             {loading ? "Anmeldung..." : "Anmelden"}
           </button>

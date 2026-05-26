@@ -96,13 +96,32 @@ export type EmailDetailModalProps = {
 export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModalProps) {
   const [email, setEmail] = useState<Email | null>(null);
   const [body, setBody] = useState<{ text: string; html: string } | null>(null);
-  const [bodyMode, setBodyMode] = useState<"text" | "html">("text");
+  const [bodyMode, setBodyMode] = useState<"text" | "html">("html");
   const [folders, setFolders] = useState<Folder[]>([]);
   const [moveTarget, setMoveTarget] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bodyLoading, setBodyLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showExternalImages, setShowExternalImages] = useState(false);
+  const [pendingLinkUrl, setPendingLinkUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.data?.type === "mailpilot-link-click" && typeof e.data.href === "string") {
+        const href: string = e.data.href;
+        if (/^mailto:/i.test(href)) {
+          window.location.href = href;
+          return;
+        }
+        if (/^https?:\/\//i.test(href)) {
+          setPendingLinkUrl(href);
+        }
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   // Lock background scroll while the modal is open + ESC closes.
   useEffect(() => {
@@ -153,7 +172,7 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
         const text = bData.body.text || bData.body.textFromHtml || "";
         const html = bData.body.html || "";
         setBody({ text, html });
-        setBodyMode(text ? "text" : html ? "html" : "text");
+        setBodyMode(html ? "html" : text ? "text" : "text");
       }
       setBodyLoading(false);
     }
@@ -164,8 +183,8 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
   }, [emailId]);
 
   const safeMailDocument = useMemo(
-    () => (body?.html ? buildSafeMailDocument(body.html) : ""),
-    [body],
+    () => (body?.html ? buildSafeMailDocument(body.html, { allowExternalImages: showExternalImages }) : ""),
+    [body, showExternalImages],
   );
 
   async function callJson(path: string, payload?: object) {
@@ -226,7 +245,7 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
 
   return (
     <div
-      className="fixed inset-0 z-50 flex bg-black/60"
+      className="glass-overlay fixed inset-0 z-50 flex"
       onClick={onClose}
     >
       <div
@@ -234,15 +253,15 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
         role="dialog"
         aria-modal="true"
         aria-label="E-Mail-Detail"
-        className="m-auto flex h-full w-full flex-col bg-white text-slate-900 shadow-2xl md:h-[90vh] md:w-[92vw] md:max-w-6xl md:rounded-xl"
+        className="glass-modal m-auto flex h-full w-full flex-col md:h-[90vh] md:w-[92vw] md:max-w-6xl md:rounded-2xl"
       >
-        <header className="flex flex-wrap items-start gap-3 border-b border-gray-200 px-4 py-3">
+        <header className="flex flex-wrap items-start gap-3 border-b glass-divider px-4 py-3">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-base font-semibold text-slate-900 md:text-lg">
+            <h2 className="truncate text-base font-semibold glass-text-primary md:text-lg">
               {email?.subject || (loading ? "Lade…" : "(Ohne Betreff)")}
             </h2>
             {email ? (
-              <p className="mt-1 truncate text-xs text-slate-600">
+              <p className="mt-1 truncate text-xs glass-text-tertiary">
                 Von: {senderDisplayName(email)}
                 {email.fromEmail && email.fromEmail !== senderDisplayName(email)
                   ? ` <${email.fromEmail}>`
@@ -256,14 +275,14 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
           <div className="flex shrink-0 gap-2">
             <button
               onClick={() => window.open(`/api/emails/${emailId}/print`, "_blank")}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+              className="glass-btn rounded-lg px-3 py-1 text-sm"
             >
               Drucken
             </button>
             <button
               onClick={onClose}
               aria-label="Schließen"
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+              className="glass-btn rounded-lg px-3 py-1 text-sm"
             >
               ✕
             </button>
@@ -271,53 +290,53 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
         </header>
 
         {email ? (
-          <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 border-b glass-divider px-4 py-2 text-xs">
             <button
               disabled={busy}
               onClick={reply}
-              className="rounded-md bg-slate-900 px-3 py-1 text-white disabled:opacity-50"
+              className="glass-btn-dark rounded-lg px-3 py-1 disabled:opacity-50"
             >
               Antworten
             </button>
             <button
               disabled={busy}
               onClick={forward}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn rounded-lg px-3 py-1 disabled:opacity-50"
             >
               Weiterleiten
             </button>
             <button
               disabled={busy}
               onClick={() => void markRead()}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn rounded-lg px-3 py-1 disabled:opacity-50"
             >
               Gelesen
             </button>
             <button
               disabled={busy}
               onClick={() => void markUnread()}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn rounded-lg px-3 py-1 disabled:opacity-50"
             >
               Ungelesen
             </button>
             <button
               disabled={busy}
               onClick={() => void moveSpecial("trash")}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn rounded-lg px-3 py-1 disabled:opacity-50"
             >
               Papierkorb
             </button>
             <button
               disabled={busy}
               onClick={() => void moveSpecial("spam")}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn rounded-lg px-3 py-1 disabled:opacity-50"
             >
               Spam
             </button>
             <select
               value={moveTarget}
               onChange={(e) => setMoveTarget(e.target.value)}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-900"
+              className="glass-select rounded-lg px-2 py-1"
             >
               <option value="">Verschieben nach…</option>
               {folders.map((f) => (
@@ -329,31 +348,31 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
             <button
               disabled={busy || !moveTarget}
               onClick={() => void moveTo(moveTarget)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn rounded-lg px-3 py-1 disabled:opacity-50"
             >
               Verschieben
             </button>
             <button
               disabled={busy}
               onClick={() => void analyzeAi()}
-              className="ml-auto rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-700 disabled:opacity-50"
+              className="glass-btn ml-auto rounded-lg px-3 py-1 disabled:opacity-50"
             >
               KI analysieren
             </button>
           </div>
         ) : null}
 
-        <div className="flex-1 overflow-y-auto bg-gray-50 px-4 py-3">
+        <div className="flex-1 overflow-y-auto px-4 py-3">
           {loading ? (
-            <p className="text-sm text-slate-700">Lade E-Mail…</p>
+            <p className="text-sm glass-text-secondary">Lade E-Mail…</p>
           ) : error ? (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p className="glass-error rounded-xl px-3 py-2 text-sm text-red-600">
               {error}
             </p>
           ) : email ? (
             <>
               {email.aiSummaryShort ? (
-                <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <div className="glass-info mb-3 rounded-xl p-3 text-sm">
                   <p className="font-semibold">KI-Zusammenfassung</p>
                   <p>{email.aiSummaryShort}</p>
                   {email.aiSummaryLong ? (
@@ -364,7 +383,7 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
 
               {(email.attachments?.length ?? 0) > 0 ? (
                 <div className="mb-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide glass-text-muted">
                     Anhänge
                   </h3>
                   <ul className="mt-1 space-y-1 text-sm">
@@ -373,22 +392,23 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
                       return (
                         <li
                           key={a.id}
-                          className="flex flex-wrap items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2"
+                          className="glass flex flex-wrap items-center gap-2 rounded-xl px-3 py-2"
                         >
                           <a
                             href={previewUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="min-w-0 flex-1 truncate font-medium text-blue-700 hover:underline"
+                            className="min-w-0 flex-1 truncate font-medium hover:underline"
+                            style={{ color: "var(--glass-accent-text)" }}
                           >
                             📎 {a.filename || "Datei"}
                           </a>
-                          <span className="text-xs text-slate-600">
+                          <span className="text-xs glass-text-tertiary">
                             {a.mimeType || "unbekannt"} · {a.size ?? 0} Bytes
                           </span>
                           <a
                             href={`${previewUrl}?download=1`}
-                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                            className="glass-btn rounded-lg px-2 py-1 text-xs"
                           >
                             Herunterladen
                           </a>
@@ -403,20 +423,20 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
                 <div className="mb-2 flex gap-2 text-xs">
                   <button
                     onClick={() => setBodyMode("text")}
-                    className={`rounded border px-2 py-0.5 ${
+                    className={`rounded-lg px-2 py-0.5 ${
                       bodyMode === "text"
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-300 bg-white text-slate-700"
+                        ? "glass-btn-dark"
+                        : "glass-btn"
                     }`}
                   >
                     Text
                   </button>
                   <button
                     onClick={() => setBodyMode("html")}
-                    className={`rounded border px-2 py-0.5 ${
+                    className={`rounded-lg px-2 py-0.5 ${
                       bodyMode === "html"
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-300 bg-white text-slate-700"
+                        ? "glass-btn-dark"
+                        : "glass-btn"
                     }`}
                   >
                     HTML
@@ -425,19 +445,33 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
               ) : null}
 
               {bodyLoading ? (
-                <p className="rounded-md border border-gray-200 bg-white p-3 text-sm text-slate-700">
+                <p className="glass rounded-xl p-3 text-sm glass-text-secondary animate-pulse">
                   Lade Mailinhalt…
                 </p>
               ) : body && bodyMode === "html" && body.html ? (
-                <iframe
-                  title="Mailinhalt"
-                  sandbox=""
-                  srcDoc={safeMailDocument}
-                  referrerPolicy="no-referrer"
-                  className="h-[60vh] w-full rounded-md border border-gray-200 bg-white"
-                />
+                <div className="w-full">
+                  {!showExternalImages ? (
+                    <div className="glass-info rounded-xl px-3 py-2 text-xs mb-2 flex items-center justify-between">
+                      <span className="glass-text-secondary">Externe Bilder blockiert.</span>
+                      <button
+                        onClick={() => setShowExternalImages(true)}
+                        className="glass-btn rounded-lg px-3 py-1 text-xs shrink-0 ml-2"
+                      >
+                        Bilder laden
+                      </button>
+                    </div>
+                  ) : null}
+                  <iframe
+                    title="Mailinhalt"
+                    sandbox="allow-scripts"
+                    srcDoc={safeMailDocument}
+                    referrerPolicy="no-referrer"
+                    className="glass h-[60vh] w-full rounded-xl"
+                    style={{ border: "none", maxWidth: "100%", overflow: "hidden" }}
+                  />
+                </div>
               ) : (
-                <div className="whitespace-pre-wrap rounded-md border border-gray-200 bg-white p-4 text-sm leading-relaxed text-slate-800">
+                <div className="glass whitespace-pre-wrap rounded-xl p-4 text-sm leading-relaxed glass-text-secondary">
                   {body?.text ||
                     email.textPreview ||
                     email.snippet ||
@@ -448,6 +482,47 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
           ) : null}
         </div>
       </div>
+
+      {pendingLinkUrl ? (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40"
+          onClick={() => setPendingLinkUrl(null)}
+        >
+          <div
+            className="glass-card mx-4 w-full max-w-lg rounded-2xl p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-3 text-lg font-semibold glass-text-primary">
+              Externen Link öffnen?
+            </h3>
+            <p className="mb-2 text-sm glass-text-secondary">
+              Möchtest du diesen Link in einem neuen Tab öffnen?
+            </p>
+            <div className="mb-5 rounded-lg bg-black/5 p-3 break-all text-xs font-mono glass-text-primary">
+              {pendingLinkUrl}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingLinkUrl(null)}
+                className="glass-btn rounded-lg px-4 py-2 text-sm"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.open(pendingLinkUrl, "_blank", "noopener,noreferrer");
+                  setPendingLinkUrl(null);
+                }}
+                className="glass-btn-primary rounded-lg px-4 py-2 text-sm"
+              >
+                Link öffnen
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

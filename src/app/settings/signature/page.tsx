@@ -63,31 +63,31 @@ export default function SignatureSettingsPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen p-6">
       <div className="mx-auto max-w-3xl">
         <div className="mb-3">
-          <a href="/settings" className="text-sm text-gray-600 hover:underline">
+          <a href="/settings" className="text-sm glass-text-secondary hover:underline">
             ← Zurück zu Einstellungen
           </a>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">Signatur</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="text-2xl font-semibold glass-text-primary">Signatur</h1>
+        <p className="mt-1 text-sm glass-text-secondary">
           Definiere eine Standardsignatur und wann sie automatisch in Mail-Aktionen eingefügt wird.
         </p>
 
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
-          {loading ? <p className="text-sm text-gray-600">Lade Einstellungen...</p> : null}
-          {error ? <p className="mb-2 text-sm text-red-600">{error}</p> : null}
-          {info ? <p className="mb-2 text-sm text-blue-700">{info}</p> : null}
+        <div className="glass-card mt-6 rounded-xl p-4">
+          {loading ? <p className="text-sm glass-text-secondary">Lade Einstellungen...</p> : null}
+          {error ? <p className="mb-2 text-sm glass-error rounded-lg px-3 py-1.5">{error}</p> : null}
+          {info ? <p className="mb-2 text-sm glass-info rounded-lg px-3 py-1.5">{info}</p> : null}
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-gray-800">Standardsignatur</span>
+            <span className="mb-1 block text-sm font-medium glass-text-primary">Standardsignatur</span>
             <textarea
               value={settings.signatureText}
               onChange={(e) => setSettings((prev) => ({ ...prev, signatureText: e.target.value }))}
               rows={8}
               placeholder={"Viele Grüße\nMax Mustermann\nFirma"}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="glass-input w-full rounded-xl px-3 py-2 text-sm"
             />
           </label>
 
@@ -128,7 +128,7 @@ export default function SignatureSettingsPage() {
             <button
               disabled={saving}
               onClick={() => void saveSettings(settings)}
-              className="rounded-md bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-60"
+              className="glass-btn-dark rounded-lg px-4 py-2 text-sm disabled:opacity-60"
             >
               {saving ? "Speichere..." : "Speichern"}
             </button>

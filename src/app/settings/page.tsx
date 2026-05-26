@@ -74,27 +74,27 @@ export default async function SettingsPage() {
   if (!session) redirect("/login");
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen p-6">
       <div className="mx-auto max-w-5xl">
         <div className="mb-2 flex items-center gap-2">
-          <a href="/mail" className="text-sm text-gray-600 hover:underline">
+          <a href="/mail" className="text-sm glass-text-secondary hover:underline">
             ← Zurück zur Mail
           </a>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900">Einstellungen</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="text-2xl font-semibold glass-text-primary">Einstellungen</h1>
+        <p className="mt-1 text-sm glass-text-secondary">
           Verwaltung von Konten, Regeln, Automation und weiteren Bereichen.
         </p>
 
-        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {sections.map((section) => (
             <a
               key={section.href}
               href={section.href}
-              className="rounded-xl border border-gray-200 bg-white p-4 transition hover:border-gray-400 hover:shadow-sm"
+              className="glass-card p-5 no-underline"
             >
-              <p className="text-sm font-semibold text-gray-900">{section.title}</p>
-              <p className="mt-1 text-xs text-gray-600">{section.description}</p>
+              <p className="text-sm font-semibold glass-text-primary">{section.title}</p>
+              <p className="mt-1.5 text-xs glass-text-secondary">{section.description}</p>
             </a>
           ))}
         </div>

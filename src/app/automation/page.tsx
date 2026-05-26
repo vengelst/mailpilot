@@ -118,21 +118,21 @@ export default function AutomationPage() {
   return (
     <main className="min-h-screen p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Automatisierung</h1>
+        <h1 className="text-xl font-semibold glass-text-primary">Automatisierung</h1>
         <button
           onClick={() => void runNow()}
           disabled={runningNow}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:opacity-60"
+          className="glass-btn disabled:opacity-60"
         >
           {runningNow ? "Läuft..." : "Jetzt ausführen"}
         </button>
       </div>
 
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="glass-error mt-2 text-sm">{error}</p> : null}
 
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 p-3">
-          <h2 className="mb-2 text-sm font-semibold">Einstellungen</h2>
+        <div className="glass-card rounded-xl p-4">
+          <h2 className="mb-2 text-sm font-semibold glass-text-primary">Einstellungen</h2>
           <div className="space-y-2 text-sm">
             <label className="flex items-center gap-2">
               <input
@@ -176,7 +176,7 @@ export default function AutomationPage() {
             </label>
             <div className="grid grid-cols-2 gap-2">
               <label>
-                <span className="block text-xs text-gray-600">
+                <span className="block text-xs glass-text-secondary">
                   Neue Mails pruefen alle (Min.)
                 </span>
                 <input
@@ -186,11 +186,11 @@ export default function AutomationPage() {
                   onChange={(e) =>
                     void saveSettings({ runIntervalMinutes: Number(e.target.value) || 30 })
                   }
-                  className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                  className="glass-input rounded-xl w-full text-sm"
                 />
               </label>
               <label>
-                <span className="block text-xs text-gray-600">Min. KI-Confidence Move</span>
+                <span className="block text-xs glass-text-secondary">Min. KI-Confidence Move</span>
                 <input
                   type="number"
                   step="0.01"
@@ -200,11 +200,11 @@ export default function AutomationPage() {
                   onChange={(e) =>
                     void saveSettings({ aiMinConfidenceForMove: Number(e.target.value) || 0.9 })
                   }
-                  className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                  className="glass-input rounded-xl w-full text-sm"
                 />
               </label>
               <label>
-                <span className="block text-xs text-gray-600">Min. KI-Confidence Trash</span>
+                <span className="block text-xs glass-text-secondary">Min. KI-Confidence Trash</span>
                 <input
                   type="number"
                   step="0.01"
@@ -214,11 +214,11 @@ export default function AutomationPage() {
                   onChange={(e) =>
                     void saveSettings({ aiMinConfidenceForTrash: Number(e.target.value) || 0.98 })
                   }
-                  className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                  className="glass-input rounded-xl w-full text-sm"
                 />
               </label>
               <label>
-                <span className="block text-xs text-gray-600">Min. KI-Confidence Spam</span>
+                <span className="block text-xs glass-text-secondary">Min. KI-Confidence Spam</span>
                 <input
                   type="number"
                   step="0.01"
@@ -228,15 +228,15 @@ export default function AutomationPage() {
                   onChange={(e) =>
                     void saveSettings({ aiMinConfidenceForSpam: Number(e.target.value) || 0.98 })
                   }
-                  className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                  className="glass-input rounded-xl w-full text-sm"
                 />
               </label>
             </div>
           </div>
         </div>
 
-        <div className="rounded-lg border border-gray-200 p-3">
-          <h2 className="mb-2 text-sm font-semibold">Letzter Lauf</h2>
+        <div className="glass-card rounded-xl p-4">
+          <h2 className="mb-2 text-sm font-semibold glass-text-primary">Letzter Lauf</h2>
           {runs[0] ? (
             <div className="text-sm">
               <p>
@@ -252,25 +252,25 @@ export default function AutomationPage() {
               <p>Analysierte Mails: {runs[0].resultJson?.analyzed ?? 0}</p>
               <p>Angewendete Regeln: {runs[0].resultJson?.appliedRules ?? 0}</p>
               <p>Verschobene Mails: {runs[0].resultJson?.blockedMoved ?? 0}</p>
-              {runs[0].error ? <p className="text-red-600">Fehler: {runs[0].error}</p> : null}
+              {runs[0].error ? <p className="glass-error">Fehler: {runs[0].error}</p> : null}
               <a href="/audit" className="mt-2 inline-block text-sm underline">
                 Zum AuditLog
               </a>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">Noch kein Lauf vorhanden.</p>
+            <p className="text-sm glass-text-secondary">Noch kein Lauf vorhanden.</p>
           )}
         </div>
       </div>
 
-      <div className="mt-4 rounded-lg border border-gray-200 p-3">
-        <h2 className="mb-2 text-sm font-semibold">Laufhistorie</h2>
-        {loading ? <p className="text-sm text-gray-600">Lade Läufe...</p> : null}
+      <div className="glass-card rounded-xl mt-4 p-4">
+        <h2 className="mb-2 text-sm font-semibold glass-text-primary">Laufhistorie</h2>
+        {loading ? <p className="text-sm glass-text-secondary">Lade Läufe...</p> : null}
         <ul className="space-y-2 text-sm">
           {runs.map((run) => (
-            <li key={run.id} className="rounded border border-gray-100 p-2">
+            <li key={run.id} className="glass rounded-lg p-2">
               {run.type} - {run.status} - {new Date(run.startedAt).toLocaleString("de-DE")}
-              {run.error ? <span className="text-red-600"> - {run.error}</span> : null}
+              {run.error ? <span className="glass-error"> - {run.error}</span> : null}
             </li>
           ))}
         </ul>
