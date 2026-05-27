@@ -479,7 +479,7 @@ export async function syncFolderEmailsIncremental(
 
     let flagsUpdated = 0;
     let removedFromIndex = 0;
-    if (lastSeenUid > BIG_ZERO && status.exists > 0) {
+    if (lastSeenUid > BIG_ZERO) {
       // Flag-refresh range covers every UID we have seen so far (`1:lastSeenUid`).
       // PERFORMANCE NOTE: this is O(folder size) per incremental sync — the IMAP
       // server returns only flags + uid (no source bytes), so it is cheap on the
@@ -490,7 +490,14 @@ export async function syncFolderEmailsIncremental(
       // advertises it) — that requires opt-in capability detection and is
       // explicitly out of scope here.
       const flagRange = `1:${lastSeenUid.toString()}`;
-      const flagSnapshots = await fetchFlagsByUidRange(config, folderPath, flagRange);
+      // Important for folders like Trash:
+      // if the server folder is currently empty (exists=0), we still must
+      // reconcile and drop stale local rows. In that case `serverUids` stays
+      // empty and all indexed rows become removal candidates.
+      const flagSnapshots =
+        status.exists > 0
+          ? await fetchFlagsByUidRange(config, folderPath, flagRange)
+          : [];
       const serverUids = new Set<bigint>(flagSnapshots.map((entry) => entry.uid));
 
       const indexedRows = await prisma.emailIndex.findMany({

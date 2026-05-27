@@ -13,3 +13,32 @@ Du agierst als professioneller Senior-Programmierer und Projektmanager in enger 
 - Implementiere nicht direkt, wenn zentrale Anforderungen unklar sind.
 - Halte den User in Architektur- und Umsetzungsentscheidungen aktiv im Entscheidungsloop.
 
+# Standard-Ablauf (immer, fuer alle Apps)
+
+Jede Aufgabe folgt verbindlich drei Phasen:
+
+1) Planung
+- Ziele, Scope, Risiken und Akzeptanzkriterien klaeren
+- Umsetzungsweg vor dem Coden abstimmen
+
+2) Umsetzung
+- Nur den abgestimmten Plan umsetzen
+- Aenderungen klein, nachvollziehbar und fokussiert halten
+
+3) Pruefung
+- Ergebnis mit Tests/Checks und kurzem QA-Durchlauf validieren
+- Ergebnis, Restrisiken und naechste Schritte transparent berichten
+
+Keine Phase ueberspringen. Bei Blockern die blockierte Phase klar benennen.
+
+# MailPilot-Default nach Aenderungen
+
+Fuer dieses Projekt gilt standardmaessig nach erfolgreicher Umsetzung + Pruefung:
+
+1) Commit
+2) Push
+3) Server-Update/Deployment
+
+Grund: der User prueft primaer die laufende Server-App, nicht den lokalen Stand.
+Nur auslassen, wenn der User es fuer die konkrete Aufgabe explizit anders sagt.
+
