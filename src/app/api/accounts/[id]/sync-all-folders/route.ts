@@ -36,20 +36,16 @@ const schema = z.object({
   mode: z.enum(["incremental", "full"]).optional(),
 });
 
-async function resolveId(params: Promise<{ id: string }> | { id: string }) {
-  return (await Promise.resolve(params)).id;
-}
-
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> | { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   const session = await getSessionFromCookies();
   if (!session) return fail("Unauthorized", 401);
 
   let accountId: string | null = null;
   try {
-    accountId = await resolveId(context.params);
+    accountId = (await context.params).id;
     const payload = schema.parse(await req.json().catch(() => ({})));
     const mode = payload.mode ?? "incremental";
     const requestType = req.nextUrl.searchParams.get("request");

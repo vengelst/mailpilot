@@ -33,6 +33,8 @@ const LIST_WIDTH_MAX = 700;
 const FOLDER_LS_KEY = "mailpilot.layout.folderWidth";
 const LIST_LS_KEY = "mailpilot.layout.listWidth";
 const MOBILE_MAIN_HEADER_LS_KEY = "mailpilot.layout.mobileMainHeaderExpanded";
+const FOLDER_COUNT_MODE_LS_KEY = "mailpilot.layout.folderCountMode";
+const FOLDER_REFRESH_INTERVAL_MS = 60 * 1000;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -168,6 +170,7 @@ type FolderTreeRowProps = {
   onToggle: (path: string) => void;
   selectedPath: string;
   onSelect: (path: string) => void;
+  countDisplayMode: "compact" | "uga";
 };
 
 function FolderTreeRow({
@@ -177,14 +180,17 @@ function FolderTreeRow({
   onToggle,
   selectedPath,
   onSelect,
+  countDisplayMode,
 }: FolderTreeRowProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.path);
   const isActive = node.folder?.path === selectedPath;
   const unread = node.folder?.unreadCount ?? 0;
   const total = node.folder?.totalCount ?? 0;
+  const read = Math.max(0, total - unread);
   const selectable = !!node.folder;
   const indent = depth * 12;
+  const folderCountTitle = `Ungelesen: ${unread} · Gelesen: ${read} · Alle: ${total}`;
 
   return (
     <li>
@@ -219,11 +225,17 @@ function FolderTreeRow({
           <span className="truncate">{node.segment}</span>
           {selectable ? (
             <span
-              className={`shrink-0 text-xs tabular-nums ${
-                isActive ? "text-white/70" : "glass-text-muted"
+              className={`shrink-0 max-w-[9.5rem] truncate whitespace-nowrap text-[10px] tabular-nums sm:text-xs ${
+                isActive ? "text-white/80" : "glass-text-muted"
               }`}
+              aria-label={folderCountTitle}
+              title={folderCountTitle}
             >
-              {unread > 0 ? `${unread}/${total}` : total > 0 ? total : ""}
+              {total > 0
+                ? countDisplayMode === "uga"
+                  ? `U ${unread} · G ${read} · A ${total}`
+                  : `U ${unread} · A ${total}`
+                : ""}
             </span>
           ) : null}
         </button>
@@ -239,6 +251,7 @@ function FolderTreeRow({
               onToggle={onToggle}
               selectedPath={selectedPath}
               onSelect={onSelect}
+              countDisplayMode={countDisplayMode}
             />
           ))}
         </ul>
@@ -576,6 +589,7 @@ export function MailWorkspace() {
   const [showSyncMenu, setShowSyncMenu] = useState(false);
   const [newMailCheckIntervalMinutes, setNewMailCheckIntervalMinutes] = useState(30);
   const [runOnAppStart, setRunOnAppStart] = useState(false);
+  const [folderCountDisplayMode, setFolderCountDisplayMode] = useState<"compact" | "uga">("compact");
   const [automationRuns, setAutomationRuns] = useState<AutomationRunSummary[]>([]);
   const [automationDashboardOpen, setAutomationDashboardOpen] = useState(false);
   const [automationLoading, setAutomationLoading] = useState(false);
@@ -1226,9 +1240,11 @@ export function MailWorkspace() {
     if (selectedAccountId) await loadFolders(selectedAccountId);
   }
 
-  async function syncAllFolders() {
+  async function syncAllFolders(trigger: "manual" | "auto" = "manual") {
     if (!selectedAccountId) return;
+    const accountId = selectedAccountId;
     if (
+      trigger === "manual" &&
       !window.confirm(
         "Alle Ordner und Unterordner werden inkrementell synchronisiert (nur Header). Bei vielen Ordnern kann das dauern. Fortfahren?",
       )
@@ -1239,7 +1255,10 @@ export function MailWorkspace() {
       setIsSyncing(true);
       setSyncProgress({
         kind: "all_folders",
-        label: "Synchronisiere alle Ordner (Delta) …",
+        label:
+          trigger === "auto"
+            ? "Automatischer Delta-Sync (alle Ordner) läuft …"
+            : "Synchronisiere alle Ordner (Delta) …",
         totalMails: 0,
         processedMails: 0,
         remainingMails: 0,
@@ -1258,7 +1277,7 @@ export function MailWorkspace() {
           void (async () => {
             try {
               const progressRes = await fetch(
-                `/api/accounts/${selectedAccountId}/sync-all-folders?request=progress`,
+                `/api/accounts/${accountId}/sync-all-folders?request=progress`,
                 {
                   method: "POST",
                   headers: { "content-type": "application/json" },
@@ -1284,7 +1303,13 @@ export function MailWorkspace() {
                 const phaseLabel =
                   progress.phase === "preparing"
                     ? "Synchronisation wird vorbereitet …"
-                    : "Synchronisiere alle Ordner (Delta) …";
+                    : progress.phase === "finished"
+                      ? "Synchronisation abgeschlossen"
+                      : progress.phase === "failed"
+                        ? "Synchronisation fehlgeschlagen"
+                        : trigger === "auto"
+                          ? "Automatischer Delta-Sync (alle Ordner) läuft …"
+                          : "Synchronisiere alle Ordner (Delta) …";
                 return {
                   ...prev,
                   label: phaseLabel,
@@ -1302,13 +1327,17 @@ export function MailWorkspace() {
           })();
         }, 1200);
       }
-      const res = await fetch(`/api/accounts/${selectedAccountId}/sync-all-folders`, {
+      const res = await fetch(`/api/accounts/${accountId}/sync-all-folders`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "incremental" }),
       });
       if (!res.ok) {
-        setUiError(await readErrorMessage(res, "Alle-Ordner-Sync fehlgeschlagen."));
+        const fallback =
+          trigger === "auto"
+            ? "Automatischer Delta-Sync (alle Ordner) fehlgeschlagen."
+            : "Alle-Ordner-Sync fehlgeschlagen.";
+        setUiError(await readErrorMessage(res, fallback));
         return;
       }
       const data = (await res.json()) as {
@@ -1320,13 +1349,15 @@ export function MailWorkspace() {
       };
       const skipped =
         data.perFolder?.filter((p) => p.skipped).length ?? 0;
-      setUiInfo(
-        `Alle-Ordner-Sync: ${data.folderCount} Ordner verarbeitet` +
-          (skipped > 0 ? `, ${skipped} übersprungen` : "") +
-          `, ${data.totalNew} neue Mails, ${data.totalFlagsUpdated} Flag-Änderungen` +
-          (data.totalRemoved > 0 ? `, ${data.totalRemoved} aus Index entfernt` : "") +
-          ".",
-      );
+      if (trigger === "manual") {
+        setUiInfo(
+          `Alle-Ordner-Sync: ${data.folderCount} Ordner verarbeitet` +
+            (skipped > 0 ? `, ${skipped} übersprungen` : "") +
+            `, ${data.totalNew} neue Mails, ${data.totalFlagsUpdated} Flag-Änderungen` +
+            (data.totalRemoved > 0 ? `, ${data.totalRemoved} aus Index entfernt` : "") +
+            ".",
+        );
+      }
       await loadEmails();
       await reloadFolders();
     } finally {
@@ -1340,7 +1371,7 @@ export function MailWorkspace() {
   }
 
   async function checkNow() {
-    await syncAllFolders();
+    await syncAllFolders("manual");
   }
 
   async function runBulk(
@@ -2099,15 +2130,7 @@ export function MailWorkspace() {
       autoCheckInFlightRef.current = true;
       void (async () => {
         try {
-          const res = await fetch(`/api/accounts/${selectedAccountId}/sync-all-folders`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ mode: "incremental" }),
-          });
-          if (res.ok) {
-            await loadEmails();
-            await reloadFolders();
-          }
+          await syncAllFolders("auto");
         } finally {
           autoCheckInFlightRef.current = false;
         }
@@ -2116,6 +2139,27 @@ export function MailWorkspace() {
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccountId, newMailCheckIntervalMinutes, isSyncing]);
+
+  useEffect(() => {
+    if (!selectedAccountId) return;
+    if (typeof document === "undefined") return;
+    const triggerRefresh = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadFolders(selectedAccountId);
+    };
+    const timer = window.setInterval(() => {
+      triggerRefresh();
+    }, FOLDER_REFRESH_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      triggerRefresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAccountId]);
 
   useEffect(() => {
     if (!composeOpen || !composeEditorRef.current) return;
@@ -2172,6 +2216,10 @@ export function MailWorkspace() {
       const v = window.localStorage.getItem(MOBILE_MAIN_HEADER_LS_KEY);
       if (v === "0") setMobileMainHeaderExpanded(false);
       if (v === "1") setMobileMainHeaderExpanded(true);
+      const folderCountMode = window.localStorage.getItem(FOLDER_COUNT_MODE_LS_KEY);
+      if (folderCountMode === "compact" || folderCountMode === "uga") {
+        setFolderCountDisplayMode(folderCountMode);
+      }
     } catch {
       /* ignore */
     }
@@ -2183,6 +2231,15 @@ export function MailWorkspace() {
       window.localStorage.setItem(MOBILE_MAIN_HEADER_LS_KEY, next ? "1" : "0");
     } catch {
       /* ignore */
+    }
+  }
+
+  function setFolderCountDisplayModePersist(next: "compact" | "uga") {
+    setFolderCountDisplayMode(next);
+    try {
+      window.localStorage.setItem(FOLDER_COUNT_MODE_LS_KEY, next);
+    } catch {
+      // ignore storage errors
     }
   }
 
@@ -2379,7 +2436,7 @@ export function MailWorkspace() {
                 role="menuitem"
                 onClick={() => {
                   setShowSyncMenu(false);
-                  void syncAllFolders();
+                  void syncAllFolders("manual");
                 }}
                 disabled={isSyncing || !selectedAccountId}
                 className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
@@ -2388,11 +2445,11 @@ export function MailWorkspace() {
                   Delta-Sync (alle Ordner)
                 </span>
                 <span className="block text-xs glass-text-tertiary">
-                  Standard: kontoweit über alle Verzeichnisse, inkl. Fortschritt + ETA
+                  Standardlauf: Delta-Sync kontoweit über alle Verzeichnisse, inkl. Fortschritt + ETA
                 </span>
               </button>
               <div className="px-3 py-2 text-xs glass-text-tertiary">
-                Vollabgleich startet nicht automatisch und kann bei Bedarf später manuell ergänzt werden.
+                Auto-Update nutzt denselben Delta-Sync im Intervall. Vollabgleich startet nie automatisch.
               </div>
             </div>
           ) : null}
@@ -2402,7 +2459,7 @@ export function MailWorkspace() {
           onClick={() => void checkNow()}
           disabled={isSyncing || !selectedAccountId}
           className="glass-btn rounded-lg px-3 py-1.5 text-sm disabled:opacity-50"
-          title={`Sofort Delta-Sync für alle Ordner starten (Intervall: ${newMailCheckIntervalMinutes} Min.)`}
+          title={`Manuell sofort Delta-Sync für alle Ordner starten (Auto-Intervall: ${newMailCheckIntervalMinutes} Min.)`}
         >
           Check jetzt
         </button>
@@ -2475,21 +2532,27 @@ export function MailWorkspace() {
         >
           <div className="flex items-center gap-3">
             <span className="text-xs">{syncProgress.label}</span>
-            {syncProgress.kind === "all_folders" &&
-            typeof syncProgress.totalMails === "number" &&
-            typeof syncProgress.remainingMails === "number" ? (
+            {syncProgress.kind === "all_folders" ? (
               <span className="text-xs glass-text-tertiary">
-                Gesamt: {syncProgress.totalMails} · Verbleibend: {syncProgress.remainingMails}
+                Gesamt: {typeof syncProgress.totalMails === "number" ? syncProgress.totalMails : "…"} ·
+                Verbleibend:{" "}
+                {typeof syncProgress.remainingMails === "number" ? syncProgress.remainingMails : "…"}
                 {syncProgress.isEstimate ? " (Schätzung)" : ""}
                 {typeof syncProgress.etaSeconds === "number"
                   ? ` · ETA ~ ${Math.max(1, Math.round(syncProgress.etaSeconds / 60))} min`
-                  : ""}
+                  : " · ETA: …"}
               </span>
             ) : null}
           </div>
-          {syncProgress.kind === "all_folders" && syncProgress.lastFolderPath ? (
-            <p className="mt-1 truncate text-[11px] glass-text-tertiary" title={syncProgress.lastFolderPath}>
-              Ordner: {folderDisplayName(syncProgress.lastFolderPath)}
+          {syncProgress.kind === "all_folders" ? (
+            <p
+              className="mt-1 truncate text-[11px] glass-text-tertiary"
+              title={syncProgress.lastFolderPath ?? undefined}
+            >
+              Ordner:{" "}
+              {syncProgress.lastFolderPath
+                ? folderDisplayName(syncProgress.lastFolderPath)
+                : "wird ermittelt …"}
             </p>
           ) : null}
           <div
@@ -2574,10 +2637,18 @@ export function MailWorkspace() {
             <article className="glass rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Status</p>
               <p className="mt-1 text-sm glass-text-primary">
-                {runOnAppStart ? "Aktiv beim App-Start" : "Nur nach Intervall / manuell"}
+                {runOnAppStart
+                  ? "Automatisch beim App-Start + Intervall"
+                  : "Automatisch nur nach Intervall"}
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
-                Intervall: alle {Math.max(5, Math.round(newMailCheckIntervalMinutes))} Minuten
+                Automatik: Delta-Sync alle {Math.max(5, Math.round(newMailCheckIntervalMinutes))} Minuten
+                {typeof document !== "undefined" && document.visibilityState !== "visible"
+                  ? " (wartet bei inaktivem Tab)"
+                  : ""}
+              </p>
+              <p className="mt-1 text-xs glass-text-tertiary">
+                Manuell: "Check jetzt" startet sofort denselben Delta-Sync.
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
                 Nächster Lauf: {formatDateTime(nextScheduledRunAt)}
@@ -2711,13 +2782,41 @@ export function MailWorkspace() {
                 <span className="text-xs font-semibold uppercase tracking-wide glass-text-muted">
                   Ordner
                 </span>
-                <button
-                  onClick={() => void reloadFolders()}
-                  className="text-xs glass-text-muted hover:opacity-80"
-                  title="Ordner aktualisieren"
-                >
-                  ↻
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setFolderCountDisplayModePersist("compact")}
+                    className={`rounded px-1.5 py-0.5 text-[10px] ${
+                      folderCountDisplayMode === "compact"
+                        ? "bg-white/35 glass-text-primary"
+                        : "glass-text-muted hover:bg-white/20"
+                    }`}
+                    title="Kompakte Zähleranzeige (U + A)"
+                    aria-pressed={folderCountDisplayMode === "compact"}
+                  >
+                    Kompakt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFolderCountDisplayModePersist("uga")}
+                    className={`rounded px-1.5 py-0.5 text-[10px] ${
+                      folderCountDisplayMode === "uga"
+                        ? "bg-white/35 glass-text-primary"
+                        : "glass-text-muted hover:bg-white/20"
+                    }`}
+                    title="Explizite Zähleranzeige (U/G/A)"
+                    aria-pressed={folderCountDisplayMode === "uga"}
+                  >
+                    U/G/A
+                  </button>
+                  <button
+                    onClick={() => void reloadFolders()}
+                    className="text-xs glass-text-muted hover:opacity-80"
+                    title="Ordner aktualisieren"
+                  >
+                    ↻
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-1">
                 <button
@@ -2791,6 +2890,7 @@ export function MailWorkspace() {
                             expanded={effectiveExpandedFolderPaths}
                             onToggle={toggleFolderExpanded}
                             selectedPath={selectedFolderPath}
+                            countDisplayMode={folderCountDisplayMode}
                             onSelect={(path) => {
                               setSelectedFolderPath(path);
                               setSelectedEmail(null);
