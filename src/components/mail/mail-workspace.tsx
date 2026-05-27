@@ -3086,8 +3086,10 @@ export function MailWorkspace() {
         />
         {foldersOpen ? (
           <aside
-            className={`glass fixed inset-y-0 left-0 z-40 flex w-[min(92vw,26rem)] min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:translate-x-0 ${
-              mobilePane === "left" ? "translate-x-0" : "-translate-x-full"
+            className={`glass fixed inset-y-0 left-0 z-40 flex w-[min(92vw,26rem)] min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:translate-x-0 lg:pointer-events-auto ${
+              mobilePane === "left"
+                ? "translate-x-0 pointer-events-auto"
+                : "-translate-x-full pointer-events-none"
             }`}
             style={{
               transform:
@@ -3314,8 +3316,10 @@ export function MailWorkspace() {
         ) : null}
 
         <section
-          className={`glass-subtle relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 lg:translate-x-0 ${
-            mobilePane === "right" ? "-translate-x-[18%]" : "translate-x-0"
+          className={`glass-subtle relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 lg:translate-x-0 lg:pointer-events-auto ${
+            mobilePane === "right"
+              ? "-translate-x-[18%] pointer-events-none"
+              : "translate-x-0 pointer-events-auto"
           }`}
           style={{
             transform:
@@ -3729,8 +3733,10 @@ export function MailWorkspace() {
         <ResizeHandle onDrag={dragList} ariaLabel="Listenbreite ändern" />
 
         <section
-          className={`glass-heavy fixed inset-y-0 right-0 z-40 flex w-[min(96vw,40rem)] min-h-0 flex-col transition-transform duration-300 ease-out lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:translate-x-0 ${
-            mobilePane === "right" ? "translate-x-0" : "translate-x-full"
+          className={`glass-heavy fixed inset-y-0 right-0 z-40 flex w-[min(96vw,40rem)] min-h-0 flex-col transition-transform duration-300 ease-out lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:translate-x-0 lg:pointer-events-auto ${
+            mobilePane === "right"
+              ? "translate-x-0 pointer-events-auto"
+              : "translate-x-full pointer-events-none"
           }`}
           style={{
             transform:
@@ -3753,7 +3759,7 @@ export function MailWorkspace() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMobilePane("middle")}
+                  onClick={() => openMobilePane("middle")}
                   className="glass-btn rounded-lg px-2.5 py-1 text-xs"
                   aria-label="Zur Mail-Liste"
                   title="Mail-Liste"
