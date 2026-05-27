@@ -43,6 +43,7 @@ export async function GET(req: Request) {
       hasAttachments: true,
       attachmentCount: true,
       flags: true,
+      localFlag: true,
       size: true,
       aiAnalyzed: true,
       aiCategory: true,

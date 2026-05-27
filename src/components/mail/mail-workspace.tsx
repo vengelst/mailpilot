@@ -310,12 +310,21 @@ type Email = {
   hasAttachments?: boolean;
   attachmentCount?: number;
   flags: string[];
+  localFlag?: "red" | "yellow" | "green" | null;
   aiSummaryShort: string | null;
   aiSummaryLong?: string | null;
   aiCategory: string | null;
   aiPriority: string | null;
   actionRequired?: boolean;
   attachments: Attachment[];
+};
+
+type LocalFlagFilter = "all" | "none" | "red" | "yellow" | "green";
+
+const LOCAL_FLAG_META: Record<Exclude<LocalFlagFilter, "all" | "none">, { label: string; className: string }> = {
+  red: { label: "Rot", className: "border-red-500/35 bg-red-500/15 text-red-700" },
+  yellow: { label: "Gelb", className: "border-amber-500/35 bg-amber-500/15 text-amber-700" },
+  green: { label: "Grün", className: "border-emerald-500/35 bg-emerald-500/15 text-emerald-700" },
 };
 
 type MailContextMenuState = {
@@ -560,6 +569,7 @@ export function MailWorkspace() {
   const [tab, setTab] = useState<"all" | "unread">("all");
   const [hasAttachmentsFilter, setHasAttachmentsFilter] = useState(false);
   const [actionRequiredFilter, setActionRequiredFilter] = useState(false);
+  const [localFlagFilter, setLocalFlagFilter] = useState<LocalFlagFilter>("all");
   const [sort, setSort] = useState<"date_desc" | "date_asc" | "from_asc" | "subject_asc">(
     "date_desc",
   );
@@ -1045,6 +1055,7 @@ export function MailWorkspace() {
     if (query.trim()) params.set("q", query.trim());
     if (hasAttachmentsFilter) params.set("hasAttachments", "true");
     if (actionRequiredFilter) params.set("actionRequired", "true");
+    if (localFlagFilter !== "all") params.set("localFlag", localFlagFilter);
     if (tab === "unread") params.set("isRead", "false");
     if (cursor) params.set("cursor", cursor);
     return params;
@@ -1484,6 +1495,21 @@ export function MailWorkspace() {
   async function runAction(path: string, payload?: object) {
     if (!selectedEmail) return;
     await runActionForEmail(selectedEmail.id, path, payload);
+  }
+
+  async function setLocalFlag(emailId: string, flag: "red" | "yellow" | "green" | null) {
+    setUiError("");
+    const res = await fetch(`/api/emails/${emailId}/local-flag`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flag }),
+    });
+    if (!res.ok) {
+      setUiError(await readErrorMessage(res, "Lokaler Flag konnte nicht gespeichert werden."));
+      return;
+    }
+    setEmails((prev) => prev.map((email) => (email.id === emailId ? { ...email, localFlag: flag } : email)));
+    setSelectedEmail((prev) => (prev?.id === emailId ? { ...prev, localFlag: flag } : prev));
   }
 
   async function moveToSelectedFolder() {
@@ -1957,6 +1983,7 @@ export function MailWorkspace() {
     query,
     hasAttachmentsFilter,
     actionRequiredFilter,
+    localFlagFilter,
     tab,
     sort,
     mailScrollBatchSize,
@@ -2992,6 +3019,20 @@ export function MailWorkspace() {
             >
               Aktion erforderlich
             </button>
+            <label className="ml-auto flex items-center gap-1 text-xs glass-text-secondary">
+              <span>Flag</span>
+              <select
+                value={localFlagFilter}
+                onChange={(e) => setLocalFlagFilter(e.target.value as LocalFlagFilter)}
+                className="glass-select rounded-lg px-2 py-1 text-xs"
+              >
+                <option value="all">Alle</option>
+                <option value="none">Ohne</option>
+                <option value="red">Rot</option>
+                <option value="yellow">Gelb</option>
+                <option value="green">Grün</option>
+              </select>
+            </label>
             {folderEmptyKind ? (
               <button
                 onClick={() => {
@@ -3092,6 +3133,7 @@ export function MailWorkspace() {
                 const seed = email.fromEmail || email.fromName || email.id;
                 const isSelected = selectedEmail?.id === email.id;
                 const isChecked = selectedIds.has(email.id);
+                const localFlag = email.localFlag ?? null;
                 const indexedAttachmentCount = email.attachmentCount ?? 0;
                 const attachmentCount =
                   indexedAttachmentCount > 0
@@ -3125,15 +3167,16 @@ export function MailWorkspace() {
                           aria-label="E-Mail auswählen"
                         />
                       </label>
-                      <button
-                        onClick={() => loadEmail(email.id)}
-                        onDoubleClick={(e) => {
-                          e.preventDefault();
-                          setPopupEmailId(email.id);
-                        }}
-                        className="flex min-w-0 flex-1 items-start gap-3 overflow-hidden text-left"
-                      >
-                      <span className="mt-0.5 flex shrink-0 flex-col items-center gap-1">
+                      <div className="flex min-w-0 flex-1 items-start gap-2 overflow-hidden">
+                        <button
+                          onClick={() => loadEmail(email.id)}
+                          onDoubleClick={(e) => {
+                            e.preventDefault();
+                            setPopupEmailId(email.id);
+                          }}
+                          className="flex min-w-0 flex-1 items-start gap-3 overflow-hidden text-left"
+                        >
+                          <span className="mt-0.5 flex shrink-0 flex-col items-center gap-1">
                         <span
                           className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white ${getAvatarColor(
                             seed,
@@ -3159,9 +3202,9 @@ export function MailWorkspace() {
                             <span className="leading-none">{attachmentCount}</span>
                           </span>
                         ) : null}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-baseline justify-between gap-2">
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-baseline justify-between gap-2">
                           <span
                             className={`truncate text-sm ${
                               unread ? "font-semibold glass-text-primary" : "glass-text-secondary"
@@ -3171,49 +3214,81 @@ export function MailWorkspace() {
                           </span>
                           <span className="shrink-0 text-right text-[11px] glass-text-muted">
                             <span className="block">
-                              Eingang: {formatDateTimeShort(email.createdAt ?? email.date)}
+                              Eingang: {formatDateTimeShort(email.date ?? email.createdAt)}
                             </span>
                           </span>
-                        </span>
-                        <span
+                            </span>
+                            <span
                           className={`block truncate text-sm ${
                             unread ? "font-semibold glass-text-primary" : "glass-text-secondary"
                           }`}
-                        >
-                          {email.subject || "(Ohne Betreff)"}
-                        </span>
-                        <span className="block truncate text-xs glass-text-muted">
-                          {email.snippet ?? ""}
-                        </span>
-                        {attachmentCount > 0 ? (
-                          <span className="mt-1 block truncate text-[11px] text-blue-700">
-                            Anhaenge:{" "}
-                            {visibleAttachmentNames.length > 0
-                              ? visibleAttachmentNames.join(", ")
-                              : "Anhang"}
-                            {hiddenAttachmentNames > 0 ? ` +${hiddenAttachmentNames} weitere` : ""}
+                            >
+                              {email.subject || "(Ohne Betreff)"}
+                            </span>
+                            <span className="block truncate text-xs glass-text-muted">
+                              {email.snippet ?? ""}
+                            </span>
+                            {attachmentCount > 0 ? (
+                              <span className="mt-1 block truncate text-[11px] text-blue-700">
+                                Anhaenge:{" "}
+                                {visibleAttachmentNames.length > 0
+                                  ? visibleAttachmentNames.join(", ")
+                                  : "Anhang"}
+                                {hiddenAttachmentNames > 0 ? ` +${hiddenAttachmentNames} weitere` : ""}
+                              </span>
+                            ) : null}
+                            <span className="mt-1 flex flex-wrap gap-1">
+                              {email.aiCategory ? (
+                                <span className="glass-badge-accent text-[10px]">
+                                  {email.aiCategory}
+                                </span>
+                              ) : null}
+                              {email.aiPriority && email.aiPriority !== "normal" ? (
+                                <span
+                                  className="glass-badge text-[10px]"
+                                  style={{ color: "var(--text-secondary)" }}
+                                >
+                                  {email.aiPriority}
+                                </span>
+                              ) : null}
+                              {email.actionRequired ? (
+                                <span className="rounded-full bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-[10px] text-red-600">
+                                  Aktion
+                                </span>
+                              ) : null}
+                            </span>
                           </span>
-                        ) : null}
-                        <span className="mt-1 flex flex-wrap gap-1">
-                          {email.aiCategory ? (
-                            <span className="glass-badge-accent text-[10px]">
-                              {email.aiCategory}
-                            </span>
-                          ) : null}
-                          {email.aiPriority && email.aiPriority !== "normal" ? (
-                            <span className="glass-badge text-[10px]" style={{ color: "var(--text-secondary)" }}>
-                              {email.aiPriority}
-                            </span>
-                          ) : null}
-                          {email.actionRequired ? (
-                            <span className="rounded-full bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-[10px] text-red-600">
-                              Aktion
-                            </span>
-                          ) : null}
-                        </span>
-                      </span>
-                      {unread ? <span className="ml-1 mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-600" /> : null}
-                      </button>
+                        </button>
+                        <div className="mt-0.5 flex shrink-0 flex-col items-end gap-1">
+                          <div className="flex flex-col gap-1">
+                            {(Object.keys(LOCAL_FLAG_META) as Array<"red" | "yellow" | "green">).map((flagValue) => {
+                              const meta = LOCAL_FLAG_META[flagValue];
+                              const active = localFlag === flagValue;
+                              return (
+                                <button
+                                  key={flagValue}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void setLocalFlag(email.id, active ? null : flagValue);
+                                  }}
+                                  aria-label={`Flag ${meta.label} ${active ? "entfernen" : "setzen"}`}
+                                  title={`Flag ${meta.label}`}
+                                  className={`h-5 w-5 rounded-full border text-[10px] leading-none transition-all ${
+                                    active
+                                      ? meta.className
+                                      : "border-slate-300/60 bg-white/80 text-transparent hover:text-slate-500"
+                                  }`}
+                                >
+                                  ●
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {unread ? <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" /> : null}
+                        </div>
+                      </div>
                     </div>
                   </li>
                 );

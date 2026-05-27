@@ -55,6 +55,12 @@ enum UserRole {
   user
 }
 
+enum LocalMailFlag {
+  red
+  yellow
+  green
+}
+
 model User {
   id                 String               @id @default(cuid())
   email              String               @unique
@@ -186,6 +192,7 @@ model EmailIndex {
   hasAttachments      Boolean            @default(false)
   attachmentCount     Int                @default(0)
   flags               String[]           @default([])
+  localFlag           LocalMailFlag?
   size                Int?
   aiAnalyzed          Boolean            @default(false)
   aiCategory          String?
@@ -219,6 +226,7 @@ model EmailIndex {
   @@index([accountId, aiPriority])
   @@index([accountId, hasAttachments])
   @@index([accountId, actionRequired])
+  @@index([accountId, localFlag])
 }
 
 model EmailAttachment {

@@ -30,6 +30,7 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(2000).optional(),
   cursor: z.string().optional(),
   sort: z.enum(["date_desc", "date_asc", "from_asc", "subject_asc"]).optional(),
+  localFlag: z.enum(["none", "red", "yellow", "green"]).optional(),
 });
 
 function toDate(value?: string) {
@@ -75,6 +76,7 @@ export async function GET(req: Request) {
     limit: searchParams.get("limit") ?? undefined,
     cursor: searchParams.get("cursor") ?? undefined,
     sort: searchParams.get("sort") ?? undefined,
+    localFlag: searchParams.get("localFlag") ?? undefined,
   });
   if (!parsed.success) {
     return fail("Suche konnte nicht ausgeführt werden — ungültige Parameter.", 400);
@@ -113,6 +115,8 @@ export async function GET(req: Request) {
     ...(input.hasAttachments
       ? { hasAttachments: input.hasAttachments === "true" }
       : {}),
+    ...(input.localFlag === "none" ? { localFlag: null } : {}),
+    ...(input.localFlag && input.localFlag !== "none" ? { localFlag: input.localFlag } : {}),
     ...(dateFrom || dateTo
       ? {
           date: {
@@ -177,6 +181,7 @@ export async function GET(req: Request) {
         hasAttachments: true,
         attachmentCount: true,
         flags: true,
+        localFlag: true,
         aiCategory: true,
         aiPriority: true,
         aiSummaryShort: true,
