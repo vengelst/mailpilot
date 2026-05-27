@@ -4,6 +4,7 @@ import {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  TouchEvent as ReactTouchEvent,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -34,6 +35,8 @@ const FOLDER_LS_KEY = "mailpilot.layout.folderWidth";
 const LIST_LS_KEY = "mailpilot.layout.listWidth";
 const MOBILE_MAIN_HEADER_LS_KEY = "mailpilot.layout.mobileMainHeaderExpanded";
 const FOLDER_COUNT_MODE_LS_KEY = "mailpilot.layout.folderCountMode";
+const MOBILE_SWIPE_LEFT_ACTION_LS_KEY = "mailpilot.mobileSwipe.leftAction";
+const MOBILE_SWIPE_RIGHT_ACTION_LS_KEY = "mailpilot.mobileSwipe.rightAction";
 const FOLDER_REFRESH_INTERVAL_MS = 60 * 1000;
 
 function clamp(value: number, min: number, max: number) {
@@ -320,6 +323,15 @@ type Email = {
 };
 
 type LocalFlagFilter = "all" | "none" | "red" | "yellow" | "green";
+type MobileSwipeAction = "none" | "trash" | "mark_read" | "mark_unread" | "print";
+
+const MOBILE_SWIPE_ACTION_OPTIONS: Array<{ value: MobileSwipeAction; label: string }> = [
+  { value: "none", label: "Keine Aktion" },
+  { value: "trash", label: "Papierkorb" },
+  { value: "mark_read", label: "Als gelesen" },
+  { value: "mark_unread", label: "Als ungelesen" },
+  { value: "print", label: "Drucken" },
+];
 
 const LOCAL_FLAG_META: Record<Exclude<LocalFlagFilter, "all" | "none">, { label: string; className: string }> = {
   red: { label: "Rot", className: "border-red-600 bg-red-500 text-white shadow-sm shadow-red-500/30" },
@@ -571,7 +583,12 @@ export function MailWorkspace() {
       }
     | null
   >(null);
-  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+  const [mobilePane, setMobilePane] = useState<"left" | "middle" | "right">("middle");
+  const [mobileDrawerDragX, setMobileDrawerDragX] = useState(0);
+  const [leftSwipeAction, setLeftSwipeAction] = useState<MobileSwipeAction>("trash");
+  const [rightSwipeAction, setRightSwipeAction] = useState<MobileSwipeAction>("mark_read");
+  const [mailSwipeOffsets, setMailSwipeOffsets] = useState<Record<string, number>>({});
+  const [mailSwipeFeedback, setMailSwipeFeedback] = useState<Record<string, MobileSwipeAction>>({});
   const [tab, setTab] = useState<"all" | "unread">("all");
   const [hasAttachmentsFilter, setHasAttachmentsFilter] = useState(false);
   const [actionRequiredFilter, setActionRequiredFilter] = useState(false);
@@ -625,6 +642,9 @@ export function MailWorkspace() {
   const [popupEmailId, setPopupEmailId] = useState<string | null>(null);
   const [pendingLinkUrl, setPendingLinkUrl] = useState<string | null>(null);
   const [isManagingFolder, setIsManagingFolder] = useState(false);
+  const [mobileMovePanelOpen, setMobileMovePanelOpen] = useState(false);
+  const [mobileNewFolderName, setMobileNewFolderName] = useState("");
+  const [mobileNewFolderParentPath, setMobileNewFolderParentPath] = useState("");
   const composeEditorRef = useRef<HTMLDivElement | null>(null);
   const mailBodyIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -651,6 +671,11 @@ export function MailWorkspace() {
   const emailsHasMoreRef = useRef(false);
   const isLoadingEmailsRef = useRef(false);
   const activeLoadEmailRequestIdRef = useRef(0);
+  const mobileDrawerGestureRef = useRef<{ x: number; y: number; pane: "left" | "middle" | "right" } | null>(
+    null,
+  );
+  const mailRowSwipeStartRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  const swipeFeedbackTimeoutsRef = useRef<Record<string, number>>({});
 
   // Three-column resizable layout (only takes effect on lg+; mobile keeps the
   // existing list/detail toggle). Initial values are static so SSR and the
@@ -725,9 +750,185 @@ export function MailWorkspace() {
     contextMenuAttachments.find((attachment) => attachment.id === contextAttachmentId) ??
     contextMenuAttachments[0] ??
     null;
+  const mobileNewFolderParentOptions = useMemo(() => {
+    return folders
+      .map((folder) => folder.path)
+      .filter((path) => path.trim().length > 0)
+      .sort((a, b) => a.localeCompare(b, "de", { sensitivity: "base" }));
+  }, [folders]);
+  const hasSelectedEmail = !!selectedEmail;
+  const mobileSwipeLabelByAction: Record<MobileSwipeAction, string> = {
+    none: "Keine Aktion",
+    trash: "Papierkorb",
+    mark_read: "Als gelesen",
+    mark_unread: "Als ungelesen",
+    print: "Drucken",
+  };
+  const rightDrawerEnabled = hasSelectedEmail;
 
   function clearSelection() {
     setSelectedIds(new Set());
+  }
+  function getMobileSwipeActionLabel(action: MobileSwipeAction) {
+    return mobileSwipeLabelByAction[action];
+  }
+  function getSwipeActionForDirection(direction: "left" | "right"): MobileSwipeAction {
+    return direction === "left" ? leftSwipeAction : rightSwipeAction;
+  }
+  function persistMobileSwipeActions(nextLeft: MobileSwipeAction, nextRight: MobileSwipeAction) {
+    setLeftSwipeAction(nextLeft);
+    setRightSwipeAction(nextRight);
+    try {
+      window.localStorage.setItem(MOBILE_SWIPE_LEFT_ACTION_LS_KEY, nextLeft);
+      window.localStorage.setItem(MOBILE_SWIPE_RIGHT_ACTION_LS_KEY, nextRight);
+    } catch {
+      // ignore storage errors
+    }
+  }
+  function setLeftSwipeActionPersist(next: MobileSwipeAction) {
+    persistMobileSwipeActions(next, rightSwipeAction);
+  }
+  function setRightSwipeActionPersist(next: MobileSwipeAction) {
+    persistMobileSwipeActions(leftSwipeAction, next);
+  }
+  function openMobilePane(nextPane: "left" | "middle" | "right") {
+    if (nextPane === "right" && !hasSelectedEmail) {
+      setMobilePane("middle");
+      return;
+    }
+    if (nextPane === "left") {
+      setFoldersOpen(true);
+    }
+    setMobilePane(nextPane);
+  }
+  function handleDrawerGestureStart(e: ReactTouchEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("[data-mail-row-swipe]")) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    mobileDrawerGestureRef.current = { x: touch.clientX, y: touch.clientY, pane: mobilePane };
+    setMobileDrawerDragX(0);
+  }
+  function handleDrawerGestureMove(e: ReactTouchEvent<HTMLDivElement>) {
+    const start = mobileDrawerGestureRef.current;
+    const touch = e.touches[0];
+    if (!start || !touch) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
+    e.preventDefault();
+    setMobileDrawerDragX(deltaX);
+  }
+  function handleDrawerGestureEnd(e: ReactTouchEvent<HTMLDivElement>) {
+    const start = mobileDrawerGestureRef.current;
+    mobileDrawerGestureRef.current = null;
+    if (!start) return;
+    const touch = e.changedTouches[0];
+    if (!touch) {
+      setMobileDrawerDragX(0);
+      return;
+    }
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    setMobileDrawerDragX(0);
+    if (Math.abs(deltaY) > Math.abs(deltaX) || Math.abs(deltaX) < 54) return;
+    if (start.pane === "middle") {
+      if (deltaX > 0) {
+        openMobilePane("left");
+      } else if (deltaX < 0 && rightDrawerEnabled) {
+        openMobilePane("right");
+      }
+      return;
+    }
+    if (start.pane === "left" && deltaX < 0) {
+      openMobilePane("middle");
+      return;
+    }
+    if (start.pane === "right" && deltaX > 0) {
+      openMobilePane("middle");
+    }
+  }
+  function clearMailSwipeFeedback(id: string) {
+    const timeoutId = swipeFeedbackTimeoutsRef.current[id];
+    if (typeof timeoutId === "number") {
+      window.clearTimeout(timeoutId);
+      delete swipeFeedbackTimeoutsRef.current[id];
+    }
+    setMailSwipeFeedback((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+  function showMailSwipeFeedback(id: string, action: MobileSwipeAction) {
+    clearMailSwipeFeedback(id);
+    setMailSwipeFeedback((prev) => ({ ...prev, [id]: action }));
+    swipeFeedbackTimeoutsRef.current[id] = window.setTimeout(() => {
+      setMailSwipeFeedback((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      delete swipeFeedbackTimeoutsRef.current[id];
+    }, 1200);
+  }
+  async function executeSwipeAction(email: Email, action: MobileSwipeAction) {
+    if (action === "none") return false;
+    if (action === "trash") {
+      await runActionForEmail(email.id, `/api/emails/${email.id}/move`, { targetSpecial: "trash" });
+      return true;
+    }
+    if (action === "mark_read") {
+      await runActionForEmail(email.id, `/api/emails/${email.id}/mark-read`);
+      return true;
+    }
+    if (action === "mark_unread") {
+      await runActionForEmail(email.id, `/api/emails/${email.id}/mark-unread`);
+      return true;
+    }
+    if (action === "print") {
+      window.open(`/api/emails/${email.id}/print?mode=${printMode}`, "_blank");
+      setUiInfo("Druckansicht geöffnet.");
+      return true;
+    }
+    return false;
+  }
+  function handleMailRowSwipeStart(emailId: string, e: ReactTouchEvent<HTMLDivElement>) {
+    const touch = e.touches[0];
+    if (!touch) return;
+    mailRowSwipeStartRef.current = { id: emailId, x: touch.clientX, y: touch.clientY };
+    setMailSwipeOffsets((prev) => (prev[emailId] ? { ...prev, [emailId]: 0 } : prev));
+  }
+  function handleMailRowSwipeMove(emailId: string, e: ReactTouchEvent<HTMLDivElement>) {
+    const state = mailRowSwipeStartRef.current;
+    const touch = e.touches[0];
+    if (!state || state.id !== emailId || !touch) return;
+    const deltaX = touch.clientX - state.x;
+    const deltaY = touch.clientY - state.y;
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
+    e.preventDefault();
+    setMailSwipeOffsets((prev) => ({ ...prev, [emailId]: clamp(deltaX, -112, 112) }));
+  }
+  async function handleMailRowSwipeEnd(email: Email, e: ReactTouchEvent<HTMLDivElement>) {
+    const state = mailRowSwipeStartRef.current;
+    mailRowSwipeStartRef.current = null;
+    const touch = e.changedTouches[0];
+    const deltaX = touch ? touch.clientX - (state?.x ?? touch.clientX) : 0;
+    setMailSwipeOffsets((prev) => {
+      if (!prev[email.id]) return prev;
+      const next = { ...prev };
+      delete next[email.id];
+      return next;
+    });
+    if (!state || state.id !== email.id || Math.abs(deltaX) < 70) return;
+    const direction = deltaX < 0 ? "left" : "right";
+    const action = getSwipeActionForDirection(direction);
+    const executed = await executeSwipeAction(email, action);
+    if (executed) {
+      showMailSwipeFeedback(email.id, action);
+    }
   }
   function toggleSelected(id: string) {
     setSelectedIds((prev) => {
@@ -990,7 +1191,7 @@ export function MailWorkspace() {
         setSelectedFolderPath(nextFolders[0]?.path ?? "");
         setSelectedEmail(null);
         setBodyContent(null);
-        setMobileView("list");
+        setMobilePane("middle");
       } else if ((action === "rename" || action === "copy") && "toPath" in payload) {
         setSelectedFolderPath(payload.toPath);
       } else if (action === "create" && "path" in payload) {
@@ -1159,7 +1360,7 @@ export function MailWorkspace() {
       setSelectedEmail(null);
     } else if (selectedEmail && !nextEmails.some((e) => e.id === selectedEmail.id)) {
       setSelectedEmail(null);
-      setMobileView("list");
+      setMobilePane("middle");
       setEmailDetailMenuOpen(false);
     }
     isLoadingEmailsRef.current = false;
@@ -1196,7 +1397,7 @@ export function MailWorkspace() {
     }
     const emailData = data.email ?? null;
     setSelectedEmail(emailData);
-    setMobileView("detail");
+    setMobilePane("right");
     setIsLoadingDetail(false);
     loadContactCandidates().catch(() => {});
     await loadBody(id);
@@ -1492,7 +1693,7 @@ export function MailWorkspace() {
       await loadEmail(emailId);
     } else {
       setSelectedEmail(null);
-      setMobileView("list");
+      setMobilePane("middle");
       setEmailDetailMenuOpen(false);
     }
     await reloadFolders();
@@ -1521,6 +1722,25 @@ export function MailWorkspace() {
   async function moveToSelectedFolder() {
     if (!selectedEmail || !moveTargetFolder) return;
     await runAction(`/api/emails/${selectedEmail.id}/move`, { targetFolder: moveTargetFolder });
+    setMobileMovePanelOpen(false);
+  }
+
+  async function createMobileMoveFolder() {
+    if (!selectedAccountId) {
+      setUiError("Bitte zuerst ein Konto wählen.");
+      return;
+    }
+    const name = mobileNewFolderName.trim();
+    if (!name) {
+      setUiError("Bitte einen Ordnernamen eingeben.");
+      return;
+    }
+    const parent = mobileNewFolderParentPath.trim();
+    const nextPath = parent ? `${parent}/${name}` : name;
+    await manageFolder("create", { path: nextPath });
+    setMoveTargetFolder(nextPath);
+    setMobileNewFolderName("");
+    setMobileMovePanelOpen(true);
   }
 
   async function blockSender() {
@@ -1725,6 +1945,26 @@ export function MailWorkspace() {
   function forwardSelected() {
     if (!selectedEmail) return;
     openCompose("forward", selectedEmail);
+  }
+
+  function replyAllSelected() {
+    if (!selectedEmail) return;
+    const own = selectedAccount?.imapUsername?.toLowerCase().trim() ?? "";
+    const sender = selectedEmail.fromEmail?.toLowerCase().trim() ?? "";
+    const additionalCc = [...(selectedEmail.toEmails ?? []), ...(selectedEmail.ccEmails ?? [])]
+      .map((mail) => mail.trim())
+      .filter((mail) => {
+        const lower = mail.toLowerCase();
+        if (!lower) return false;
+        if (own && lower === own) return false;
+        if (sender && lower === sender) return false;
+        return true;
+      });
+    openCompose("reply", selectedEmail);
+    setComposeForm((prev) => ({
+      ...prev,
+      cc: Array.from(new Set(additionalCc)).join(", "),
+    }));
   }
 
   function applyComposeCommand(command: string, value?: string) {
@@ -2023,6 +2263,22 @@ export function MailWorkspace() {
     setSelectedIds(new Set());
   }, [selectedAccountId, selectedFolderPath, tab, query, hasAttachmentsFilter, actionRequiredFilter]);
 
+  useEffect(() => {
+    if (!selectedEmail && mobilePane === "right") {
+      setMobilePane("middle");
+    }
+    if (!selectedEmail) setMobileMovePanelOpen(false);
+    if (mobilePane !== "right") setMobileMovePanelOpen(false);
+  }, [selectedEmail, mobilePane]);
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of Object.values(swipeFeedbackTimeoutsRef.current)) {
+        if (typeof timeoutId === "number") window.clearTimeout(timeoutId);
+      }
+    };
+  }, []);
+
   // Close the sync dropdown on Escape or when clicking elsewhere.
   useEffect(() => {
     return () => {
@@ -2253,6 +2509,20 @@ export function MailWorkspace() {
       if (folderCountMode === "compact" || folderCountMode === "uga") {
         setFolderCountDisplayMode(folderCountMode);
       }
+      const persistedLeftSwipeAction = window.localStorage.getItem(MOBILE_SWIPE_LEFT_ACTION_LS_KEY);
+      const persistedRightSwipeAction = window.localStorage.getItem(MOBILE_SWIPE_RIGHT_ACTION_LS_KEY);
+      const isSwipeAction = (value: string | null): value is MobileSwipeAction =>
+        value === "none" ||
+        value === "trash" ||
+        value === "mark_read" ||
+        value === "mark_unread" ||
+        value === "print";
+      if (isSwipeAction(persistedLeftSwipeAction)) {
+        setLeftSwipeAction(persistedLeftSwipeAction);
+      }
+      if (isSwipeAction(persistedRightSwipeAction)) {
+        setRightSwipeAction(persistedRightSwipeAction);
+      }
     } catch {
       /* ignore */
     }
@@ -2424,7 +2694,7 @@ export function MailWorkspace() {
             setEmails([]);
             setSelectedEmail(null);
             setBodyContent(null);
-            setMobileView("list");
+            setMobilePane("middle");
             setEmailDetailMenuOpen(false);
           }}
           className="glass-select ml-2 rounded-lg px-2 py-1.5 text-sm"
@@ -2796,7 +3066,10 @@ export function MailWorkspace() {
       ) : null}
 
       <div
-        className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-x-none lg:flex-row"
+        onTouchStart={handleDrawerGestureStart}
+        onTouchMove={handleDrawerGestureMove}
+        onTouchEnd={handleDrawerGestureEnd}
         style={
           {
             "--mp-folder-w": `${folderWidth}px`,
@@ -2804,13 +3077,38 @@ export function MailWorkspace() {
           } as CSSProperties
         }
       >
+        <div
+          className={`fixed inset-0 z-30 bg-black/35 transition-opacity duration-300 lg:hidden ${
+            mobilePane === "middle" ? "pointer-events-none opacity-0" : "opacity-100"
+          }`}
+          onClick={() => openMobilePane("middle")}
+          aria-hidden={mobilePane === "middle"}
+        />
         {foldersOpen ? (
           <aside
-            className={`glass flex max-h-[50dvh] min-h-0 min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 ${
-              mobileView !== "list" ? "hidden lg:flex" : "flex"
+            className={`glass fixed inset-y-0 left-0 z-40 flex w-[min(92vw,26rem)] min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:translate-x-0 ${
+              mobilePane === "left" ? "translate-x-0" : "-translate-x-full"
             }`}
+            style={{
+              transform:
+                mobilePane === "left" && mobileDrawerDragX < 0
+                  ? `translateX(${mobileDrawerDragX}px)`
+                  : undefined,
+            }}
           >
             <div className="border-b glass-divider px-3 py-2 space-y-2">
+              <div className="flex items-center justify-between lg:hidden">
+                <span className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Navigation</span>
+                <button
+                  type="button"
+                  onClick={() => openMobilePane("middle")}
+                  className="glass-btn rounded-lg px-2 py-1 text-xs"
+                  aria-label="Navigation schließen"
+                  title="Zur Mail-Liste"
+                >
+                  Schließen
+                </button>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wide glass-text-muted">
                   Ordner
@@ -2894,6 +3192,75 @@ export function MailWorkspace() {
                   Aktuell: {folderDisplayName(selectedFolderPath)}
                 </p>
               ) : null}
+              <div className="grid grid-cols-2 gap-1 border-t glass-divider pt-2 lg:hidden">
+                <button
+                  type="button"
+                  onClick={() => void checkNow()}
+                  disabled={isSyncing || !selectedAccountId}
+                  className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50"
+                  title="Delta-Sync jetzt starten"
+                >
+                  Sync
+                </button>
+                <a
+                  href="/search"
+                  className="glass-btn rounded-lg px-2 py-1 text-center text-xs"
+                  title="Erweiterte Suche"
+                >
+                  Detailsuche
+                </a>
+                <a
+                  href="/settings"
+                  className="glass-btn rounded-lg px-2 py-1 text-center text-xs"
+                  title="Einstellungen"
+                >
+                  Settings
+                </a>
+                <a
+                  href="/ai-assistant"
+                  className="glass-btn rounded-lg px-2 py-1 text-center text-xs"
+                  title="KI-Assistent"
+                >
+                  AI
+                </a>
+              </div>
+              <div className="space-y-2 rounded-lg border border-white/25 bg-white/10 p-2 lg:hidden">
+                <p className="text-[11px] font-semibold uppercase tracking-wide glass-text-muted">
+                  Swipe-Aktionen
+                </p>
+                <label className="block text-xs glass-text-secondary">
+                  Links wischen
+                  <select
+                    value={leftSwipeAction}
+                    onChange={(e) => setLeftSwipeActionPersist(e.target.value as MobileSwipeAction)}
+                    className="glass-select mt-1 w-full rounded-lg px-2 py-1.5 text-xs"
+                    aria-label="Aktion bei Swipe nach links"
+                    title="Aktion bei Swipe nach links"
+                  >
+                    {MOBILE_SWIPE_ACTION_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs glass-text-secondary">
+                  Rechts wischen
+                  <select
+                    value={rightSwipeAction}
+                    onChange={(e) => setRightSwipeActionPersist(e.target.value as MobileSwipeAction)}
+                    className="glass-select mt-1 w-full rounded-lg px-2 py-1.5 text-xs"
+                    aria-label="Aktion bei Swipe nach rechts"
+                    title="Aktion bei Swipe nach rechts"
+                  >
+                    {MOBILE_SWIPE_ACTION_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
             <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto py-1 text-sm">
               {folders.length === 0 ? (
@@ -2928,7 +3295,7 @@ export function MailWorkspace() {
                               setSelectedFolderPath(path);
                               setSelectedEmail(null);
                               setBodyContent(null);
-                              setMobileView("list");
+                              setMobilePane("middle");
                               setEmailDetailMenuOpen(false);
                             }}
                           />
@@ -2947,9 +3314,15 @@ export function MailWorkspace() {
         ) : null}
 
         <section
-          className={`glass-subtle flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 ${
-            mobileView === "detail" ? "hidden lg:flex" : "flex"
+          className={`glass-subtle relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 lg:translate-x-0 ${
+            mobilePane === "right" ? "-translate-x-[18%]" : "translate-x-0"
           }`}
+          style={{
+            transform:
+              mobilePane === "middle"
+                ? `translateX(${mobileDrawerDragX > 0 ? Math.min(mobileDrawerDragX * 0.22, 64) : mobileDrawerDragX < 0 ? Math.max(mobileDrawerDragX * 0.22, -64) : 0}px)`
+                : undefined,
+          }}
         >
           <div className="flex items-center gap-3 border-b glass-divider px-3 py-2">
             <div className="flex gap-3 text-sm">
@@ -3152,10 +3525,46 @@ export function MailWorkspace() {
                   .filter(Boolean);
                 const visibleAttachmentNames = attachmentNames.slice(0, 2);
                 const hiddenAttachmentNames = Math.max(0, attachmentCount - visibleAttachmentNames.length);
+                const swipeOffset = mailSwipeOffsets[email.id] ?? 0;
+                const swipePreviewDirection = swipeOffset < -42 ? "left" : swipeOffset > 42 ? "right" : null;
+                const swipePreviewAction = swipePreviewDirection
+                  ? getSwipeActionForDirection(swipePreviewDirection)
+                  : "none";
+                const swipeFeedbackAction = mailSwipeFeedback[email.id];
+                const swipeActiveLabel = swipeFeedbackAction
+                  ? getMobileSwipeActionLabel(swipeFeedbackAction)
+                  : getMobileSwipeActionLabel(swipePreviewAction);
                 return (
                   <li key={email.id} className="min-w-0 overflow-x-hidden">
                     <div
+                      className={`relative overflow-hidden rounded-xl ${
+                        swipeOffset !== 0 ? "bg-blue-500/15" : ""
+                      }`}
+                      data-mail-row-swipe
+                    >
+                      <div
+                        className={`pointer-events-none absolute inset-0 z-0 flex items-center px-3 text-xs font-semibold transition-opacity ${
+                          swipePreviewDirection || swipeFeedbackAction ? "opacity-100" : "opacity-0"
+                        } ${
+                          swipePreviewDirection === "right" ||
+                          (swipeFeedbackAction &&
+                            getSwipeActionForDirection("right") === swipeFeedbackAction &&
+                            swipeOffset >= 0)
+                            ? "justify-start text-emerald-700"
+                            : "justify-end text-blue-700"
+                        }`}
+                        aria-hidden
+                      >
+                        {swipePreviewDirection || swipeFeedbackAction ? swipeActiveLabel : ""}
+                      </div>
+                    <div
                       onContextMenu={(e) => openMailContextMenu(e, email)}
+                      onTouchStart={(e) => handleMailRowSwipeStart(email.id, e)}
+                      onTouchMove={(e) => handleMailRowSwipeMove(email.id, e)}
+                      onTouchEnd={(e) => {
+                        void handleMailRowSwipeEnd(email, e);
+                      }}
+                      style={{ transform: `translateX(${swipeOffset}px)` }}
                       className={`flex w-full min-w-0 items-start gap-2 overflow-hidden rounded-xl px-2 py-2 text-left transition-all ${
                         isSelected || isChecked
                           ? "glass-selected border-2"
@@ -3296,6 +3705,7 @@ export function MailWorkspace() {
                         </div>
                       </div>
                     </div>
+                    </div>
                   </li>
                 );
               })}
@@ -3319,18 +3729,36 @@ export function MailWorkspace() {
         <ResizeHandle onDrag={dragList} ariaLabel="Listenbreite ändern" />
 
         <section
-          className={`glass-heavy flex min-h-0 flex-1 flex-col lg:min-w-0 ${
-            mobileView === "list" ? "hidden lg:flex" : "flex"
+          className={`glass-heavy fixed inset-y-0 right-0 z-40 flex w-[min(96vw,40rem)] min-h-0 flex-col transition-transform duration-300 ease-out lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:translate-x-0 ${
+            mobilePane === "right" ? "translate-x-0" : "translate-x-full"
           }`}
+          style={{
+            transform:
+              mobilePane === "right" && mobileDrawerDragX > 0
+                ? `translateX(${mobileDrawerDragX}px)`
+                : undefined,
+          }}
         >
           {selectedEmail ? (
             <>
               <div className="flex items-center gap-2 border-b glass-divider px-3 py-2 lg:hidden">
                 <button
-                  onClick={() => setMobileView("list")}
-                  className="glass-btn rounded-lg px-3 py-1.5 text-sm"
+                  type="button"
+                  onClick={() => openMobilePane("left")}
+                  className="glass-btn rounded-lg px-2.5 py-1 text-xs"
+                  aria-label="Zu Konto und Ordnern"
+                  title="Konto und Ordner"
                 >
-                  ← Liste
+                  ← Ordner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobilePane("middle")}
+                  className="glass-btn rounded-lg px-2.5 py-1 text-xs"
+                  aria-label="Zur Mail-Liste"
+                  title="Mail-Liste"
+                >
+                  Liste
                 </button>
               </div>
 
@@ -3352,7 +3780,7 @@ export function MailWorkspace() {
                     {formatDateTimeShort(selectedEmail.date ?? selectedEmail.createdAt)}
                   </p>
                 </div>
-                <div className="relative shrink-0" data-email-detail-menu-root>
+                <div className="relative hidden shrink-0 lg:block" data-email-detail-menu-root>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -3617,11 +4045,32 @@ export function MailWorkspace() {
                 </div>
               </div>
 
+              <div className="border-b glass-divider px-4 py-3 lg:hidden">
+                <p className="text-sm font-medium glass-text-primary">{senderDisplayName(selectedEmail)}</p>
+                {selectedEmail.fromEmail ? (
+                  <p className="text-xs break-all glass-text-secondary">&lt;{selectedEmail.fromEmail}&gt;</p>
+                ) : null}
+                <p className="mt-1 text-xs glass-text-muted">
+                  An: {(selectedEmail.toEmails ?? []).join(", ") || "—"}
+                </p>
+                <p className="text-xs glass-text-muted">
+                  Eingang: {formatDetailDate(selectedEmail.date ?? selectedEmail.createdAt)}
+                </p>
+                <p className="text-xs glass-text-muted">
+                  Gesendet: {formatDetailDate(selectedEmail.date)}
+                </p>
+                {selectedEmail.attachments.length > 0 ? (
+                  <p className="mt-1 text-xs glass-text-secondary">
+                    Anhänge: {selectedEmail.attachments.length}
+                  </p>
+                ) : null}
+              </div>
+
               {isLoadingDetail ? (
                 <p className="px-4 py-2 text-sm glass-text-secondary">Lade Detail...</p>
               ) : null}
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-20 lg:pb-4 flex flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-28 lg:pb-4 flex flex-col">
                 {selectedEmail.aiSummaryShort ? (
                   <div className="glass-info mb-4 rounded-xl p-3 text-sm">
                     <p className="font-semibold">KI-Zusammenfassung</p>
@@ -3858,6 +4307,122 @@ export function MailWorkspace() {
                     </ul>
                   </div>
                 ) : null}
+              </div>
+              <div className="glass-solid fixed inset-x-0 bottom-0 z-20 border-t glass-divider px-3 py-2 lg:hidden">
+                {mobileMovePanelOpen ? (
+                  <div className="mb-2 rounded-xl border border-white/25 bg-white/55 p-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold glass-text-primary">Verschieben</p>
+                      <button
+                        type="button"
+                        onClick={() => setMobileMovePanelOpen(false)}
+                        className="glass-btn rounded-lg px-2 py-1 text-xs"
+                      >
+                        Schließen
+                      </button>
+                    </div>
+                    <select
+                      value={moveTargetFolder}
+                      onChange={(e) => setMoveTargetFolder(e.target.value)}
+                      className="glass-select mt-2 w-full rounded-lg px-2 py-1.5 text-xs"
+                    >
+                      <option value="">Vorhandenen Ordner wählen…</option>
+                      {folders.map((folder) => (
+                        <option key={folder.path} value={folder.path}>
+                          {folder.displayName}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void moveToSelectedFolder()}
+                      disabled={!moveTargetFolder}
+                      className="glass-btn mt-2 w-full rounded-lg px-2 py-1.5 text-xs disabled:opacity-50"
+                    >
+                      In ausgewählten Ordner verschieben
+                    </button>
+                    <div className="mt-2 rounded-lg border border-white/30 p-2">
+                      <p className="text-[11px] font-medium glass-text-secondary">Neuen Ordner erstellen</p>
+                      <input
+                        value={mobileNewFolderName}
+                        onChange={(e) => setMobileNewFolderName(e.target.value)}
+                        placeholder="Neuer Ordnername"
+                        className="glass-input mt-1 w-full rounded-lg px-2 py-1.5 text-xs"
+                      />
+                      <select
+                        value={mobileNewFolderParentPath}
+                        onChange={(e) => setMobileNewFolderParentPath(e.target.value)}
+                        className="glass-select mt-1 w-full rounded-lg px-2 py-1.5 text-xs"
+                      >
+                        <option value="">Kein Parent (Root)</option>
+                        {mobileNewFolderParentOptions.map((path) => (
+                          <option key={path} value={path}>
+                            {path}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => void createMobileMoveFolder()}
+                        disabled={!mobileNewFolderName.trim() || isManagingFolder}
+                        className="glass-btn mt-2 w-full rounded-lg px-2 py-1.5 text-xs disabled:opacity-50"
+                      >
+                        Ordner anlegen
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-5 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMobileMovePanelOpen((v) => !v)}
+                    className="glass-btn rounded-lg p-2"
+                    aria-label="Verschieben"
+                    title="Verschieben"
+                  >
+                    ↕
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void runAction(`/api/emails/${selectedEmail.id}/move`, {
+                        targetSpecial: "trash",
+                      })
+                    }
+                    className="glass-btn rounded-lg p-2"
+                    aria-label="Papierkorb"
+                    title="Papierkorb"
+                  >
+                    🗑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={replyToSelected}
+                    className="glass-btn rounded-lg p-2"
+                    aria-label="Antworten"
+                    title="Antworten"
+                  >
+                    ↩
+                  </button>
+                  <button
+                    type="button"
+                    onClick={replyAllSelected}
+                    className="glass-btn rounded-lg p-2"
+                    aria-label="Allen antworten"
+                    title="Allen antworten"
+                  >
+                    ⇄
+                  </button>
+                  <button
+                    type="button"
+                    onClick={forwardSelected}
+                    className="glass-btn rounded-lg p-2"
+                    aria-label="Weiterleiten"
+                    title="Weiterleiten"
+                  >
+                    ↪
+                  </button>
+                </div>
               </div>
             </>
           ) : (
