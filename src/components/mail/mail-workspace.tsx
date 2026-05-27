@@ -322,9 +322,15 @@ type Email = {
 type LocalFlagFilter = "all" | "none" | "red" | "yellow" | "green";
 
 const LOCAL_FLAG_META: Record<Exclude<LocalFlagFilter, "all" | "none">, { label: string; className: string }> = {
-  red: { label: "Rot", className: "border-red-500/35 bg-red-500/15 text-red-700" },
-  yellow: { label: "Gelb", className: "border-amber-500/35 bg-amber-500/15 text-amber-700" },
-  green: { label: "Grün", className: "border-emerald-500/35 bg-emerald-500/15 text-emerald-700" },
+  red: { label: "Rot", className: "border-red-600 bg-red-500 text-white shadow-sm shadow-red-500/30" },
+  yellow: {
+    label: "Gelb",
+    className: "border-amber-500 bg-amber-400 text-amber-950 shadow-sm shadow-amber-400/30",
+  },
+  green: {
+    label: "Grün",
+    className: "border-emerald-600 bg-emerald-500 text-white shadow-sm shadow-emerald-500/30",
+  },
 };
 
 type MailContextMenuState = {
@@ -3212,7 +3218,7 @@ export function MailWorkspace() {
                           >
                             {sender}
                           </span>
-                          <span className="shrink-0 text-right text-[11px] glass-text-muted">
+                          <span className="shrink-0 text-right text-xs font-medium glass-text-secondary">
                             <span className="block">
                               Eingang: {formatDateTimeShort(email.date ?? email.createdAt)}
                             </span>
@@ -3278,7 +3284,7 @@ export function MailWorkspace() {
                                   className={`h-5 w-5 rounded-full border text-[10px] leading-none transition-all ${
                                     active
                                       ? meta.className
-                                      : "border-slate-300/60 bg-white/80 text-transparent hover:text-slate-500"
+                                      : "border-slate-300/70 bg-white/55 text-slate-300 hover:border-slate-400 hover:text-slate-500"
                                   }`}
                                 >
                                   ●
@@ -3340,6 +3346,12 @@ export function MailWorkspace() {
                 <h2 className="min-w-0 flex-1 truncate text-base font-semibold glass-text-primary md:text-lg">
                   {selectedEmail.subject || "(Ohne Betreff)"}
                 </h2>
+                <div className="hidden shrink-0 text-right md:block">
+                  <p className="text-[11px] font-medium glass-text-tertiary">Eingang</p>
+                  <p className="text-xs glass-text-secondary">
+                    {formatDateTimeShort(selectedEmail.date ?? selectedEmail.createdAt)}
+                  </p>
+                </div>
                 <div className="relative shrink-0" data-email-detail-menu-root>
                   <button
                     type="button"
@@ -3388,7 +3400,7 @@ export function MailWorkspace() {
                           An: {(selectedEmail.toEmails ?? []).join(", ") || "—"}
                         </p>
                         <p className="mt-1 text-xs glass-text-muted">
-                          Eingang: {formatDetailDate(selectedEmail.createdAt)}
+                          Eingang: {formatDetailDate(selectedEmail.date ?? selectedEmail.createdAt)}
                         </p>
                         <p className="text-xs glass-text-muted">
                           Gesendet: {formatDetailDate(selectedEmail.date)}
