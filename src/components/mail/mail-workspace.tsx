@@ -781,7 +781,7 @@ export function MailWorkspace() {
   const rightDrawerEnabled = hasSelectedEmail;
   const isMobileLeftPaneVisible = foldersOpen && mobilePane === "left";
   const isMobileRightPaneVisible = mobilePane === "right" && rightDrawerEnabled;
-  const isMobileMiddlePaneVisible = mobilePane === "middle" || !isMobileRightPaneVisible;
+  const isMobileDrawerOpen = isMobileLeftPaneVisible || isMobileRightPaneVisible;
 
   function clearSelection() {
     setSelectedIds(new Set());
@@ -3223,17 +3223,17 @@ export function MailWorkspace() {
       >
         <div
           className={`fixed inset-0 z-30 bg-black/35 transition-opacity duration-300 lg:hidden ${
-            isMobileMiddlePaneVisible ? "pointer-events-none opacity-0" : "opacity-100"
+            isMobileDrawerOpen ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
           onClick={() => openMobilePane("middle")}
-          aria-hidden={isMobileMiddlePaneVisible}
+          aria-hidden={!isMobileDrawerOpen}
         />
         {foldersOpen ? (
           <aside
-            className={`glass fixed inset-y-0 left-0 flex w-[min(92vw,26rem)] min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:translate-x-0 lg:pointer-events-auto ${
+            className={`glass min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:flex ${
               isMobileLeftPaneVisible
-                ? "z-40 translate-x-0 pointer-events-auto"
-                : "z-0 -translate-x-full pointer-events-none"
+                ? "fixed inset-y-0 left-0 z-40 flex w-[min(92vw,26rem)]"
+                : "hidden lg:flex"
             }`}
             style={{
               transform:
@@ -3460,17 +3460,7 @@ export function MailWorkspace() {
         ) : null}
 
         <section
-          className={`glass-subtle relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 transition-[transform,opacity] duration-300 ease-out lg:z-10 lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 lg:translate-x-0 lg:pointer-events-auto lg:opacity-100 ${
-            isMobileMiddlePaneVisible
-              ? "z-20 translate-x-0 pointer-events-auto opacity-100"
-              : "z-0 -translate-x-[18%] pointer-events-none opacity-0"
-          }`}
-          style={{
-            transform:
-              isMobileMiddlePaneVisible && mobilePane === "middle"
-                ? `translateX(${mobileDrawerDragX > 0 ? Math.min(mobileDrawerDragX * 0.22, 64) : mobileDrawerDragX < 0 ? Math.max(mobileDrawerDragX * 0.22, -64) : 0}px)`
-                : undefined,
-          }}
+          className="glass-subtle relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0"
         >
           <div className="flex items-center gap-3 border-b glass-divider px-3 py-2">
             <div className="flex gap-3 text-sm">
@@ -3767,26 +3757,26 @@ export function MailWorkspace() {
                         ) : null}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-baseline justify-between gap-2">
+                            <span className="flex items-baseline justify-between gap-1">
                           <span
-                            className={`truncate text-sm ${
+                            className={`min-w-0 truncate text-sm ${
                               unread ? "font-semibold glass-text-primary" : "glass-text-secondary"
                             }`}
                           >
                             {sender}
                           </span>
-                          <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium glass-text-secondary">
-                            <span className="block">
-                              {formatDateTimeShort(email.date ?? email.createdAt)}
-                            </span>
+                          <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums glass-text-muted">
+                            {formatDateTimeShort(email.date ?? email.createdAt)}
                           </span>
                             </span>
-                            <span
-                          className={`block truncate text-sm ${
-                            unread ? "font-semibold glass-text-primary" : "glass-text-secondary"
-                          }`}
-                            >
-                              {email.subject || "(Ohne Betreff)"}
+                            <span className="flex items-baseline justify-between gap-1">
+                          <span
+                            className={`min-w-0 truncate text-sm ${
+                              unread ? "font-semibold glass-text-primary" : "glass-text-secondary"
+                            }`}
+                          >
+                            {email.subject || "(Ohne Betreff)"}
+                          </span>
                             </span>
                             <span className="block truncate text-xs glass-text-muted">
                               {email.snippet ?? ""}
@@ -3877,10 +3867,10 @@ export function MailWorkspace() {
         <ResizeHandle onDrag={dragList} ariaLabel="Listenbreite ändern" />
 
         <section
-          className={`glass-heavy fixed inset-y-0 right-0 flex w-[min(96vw,40rem)] min-h-0 flex-col transition-[transform,opacity] duration-300 ease-out lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:translate-x-0 lg:pointer-events-auto lg:opacity-100 ${
+          className={`glass-heavy min-h-0 flex-col lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:flex ${
             isMobileRightPaneVisible
-              ? "z-40 translate-x-0 opacity-100 pointer-events-auto"
-              : "z-0 translate-x-[105%] opacity-0 pointer-events-none"
+              ? "fixed inset-y-0 right-0 z-40 flex w-[min(96vw,40rem)]"
+              : "hidden lg:flex"
           }`}
           style={{
             transform:
@@ -3924,9 +3914,9 @@ export function MailWorkspace() {
                 <h2 className="min-w-0 flex-1 truncate text-base font-semibold glass-text-primary md:text-lg">
                   {selectedEmail.subject || "(Ohne Betreff)"}
                 </h2>
-                <div className="hidden shrink-0 text-right md:block">
-                  <p className="text-[11px] font-medium glass-text-tertiary">Eingang</p>
-                  <p className="text-xs glass-text-secondary">
+                <div className="shrink-0 text-right">
+                  <p className="text-[10px] font-medium glass-text-tertiary">Eingang</p>
+                  <p className="text-[11px] tabular-nums glass-text-secondary">
                     {formatDateTimeShort(selectedEmail.date ?? selectedEmail.createdAt)}
                   </p>
                 </div>
@@ -4397,7 +4387,7 @@ export function MailWorkspace() {
                       srcDoc={safeMailDocument}
                       referrerPolicy="no-referrer"
                       className="block w-full flex-1 rounded-xl glass"
-                      style={{ border: "none", maxWidth: "100%", minHeight: "480px", overflowX: "hidden" }}
+                      style={{ border: "none", maxWidth: "100%", minHeight: "calc(100dvh - 220px)", overflowX: "hidden" }}
                     />
                   </div>
                 ) : (
