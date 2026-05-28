@@ -324,6 +324,14 @@ type Email = {
 
 type LocalFlagFilter = "all" | "none" | "red" | "yellow" | "green";
 type MobileSwipeAction = "none" | "trash" | "mark_read" | "mark_unread" | "print";
+type PendingSwipeTrashUndo = {
+  id: string;
+  email: Email;
+  originalIndex: number;
+  sourceAccountId: string;
+  sourceFolderPath: string;
+  timeoutId: number;
+};
 
 const MOBILE_SWIPE_ACTION_OPTIONS: Array<{ value: MobileSwipeAction; label: string }> = [
   { value: "none", label: "Keine Aktion" },
@@ -589,6 +597,7 @@ export function MailWorkspace() {
   const [rightSwipeAction, setRightSwipeAction] = useState<MobileSwipeAction>("mark_read");
   const [mailSwipeOffsets, setMailSwipeOffsets] = useState<Record<string, number>>({});
   const [mailSwipeFeedback, setMailSwipeFeedback] = useState<Record<string, MobileSwipeAction>>({});
+  const [pendingSwipeTrashUndos, setPendingSwipeTrashUndos] = useState<PendingSwipeTrashUndo[]>([]);
   const [tab, setTab] = useState<"all" | "unread">("all");
   const [hasAttachmentsFilter, setHasAttachmentsFilter] = useState(false);
   const [actionRequiredFilter, setActionRequiredFilter] = useState(false);
@@ -670,6 +679,11 @@ export function MailWorkspace() {
   const emailsNextCursorRef = useRef<string | null>(null);
   const emailsHasMoreRef = useRef(false);
   const isLoadingEmailsRef = useRef(false);
+  const pendingSwipeTrashUndosRef = useRef<PendingSwipeTrashUndo[]>([]);
+  const selectedAccountIdRef = useRef(selectedAccountId);
+  const selectedFolderPathRef = useRef(selectedFolderPath);
+  const swipeTrashUndoSeqRef = useRef(0);
+  const activeLoadEmailsRequestIdRef = useRef(0);
   const activeLoadEmailRequestIdRef = useRef(0);
   const mobileDrawerGestureRef = useRef<{ x: number; y: number; pane: "left" | "middle" | "right" } | null>(
     null,
@@ -815,7 +829,14 @@ export function MailWorkspace() {
     if (!start || !touch) return;
     const deltaX = touch.clientX - start.x;
     const deltaY = touch.clientY - start.y;
-    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
+    // Detail -> Liste soll auch bei leicht vertikalem Fingerweg stabil reagieren.
+    if (start.pane === "right") {
+      if (deltaX <= 0) return;
+      if (Math.abs(deltaY) > Math.abs(deltaX) * 1.35) return;
+      if (Math.abs(deltaX) < 16) return;
+    } else if (Math.abs(deltaY) > Math.abs(deltaX)) {
+      return;
+    }
     e.preventDefault();
     setMobileDrawerDragX(deltaX);
   }
@@ -831,7 +852,8 @@ export function MailWorkspace() {
     const deltaX = touch.clientX - start.x;
     const deltaY = touch.clientY - start.y;
     setMobileDrawerDragX(0);
-    if (Math.abs(deltaY) > Math.abs(deltaX) || Math.abs(deltaX) < 54) return;
+    if (Math.abs(deltaY) > Math.abs(deltaX) && start.pane !== "right") return;
+    if (Math.abs(deltaX) < (start.pane === "right" ? 34 : 54)) return;
     if (start.pane === "middle") {
       if (deltaX > 0) {
         openMobilePane("left");
@@ -874,11 +896,84 @@ export function MailWorkspace() {
       delete swipeFeedbackTimeoutsRef.current[id];
     }, 1200);
   }
+  function upsertEmailAtIndex(nextList: Email[], email: Email, index: number) {
+    const without = nextList.filter((entry) => entry.id !== email.id);
+    const safeIndex = clamp(index, 0, without.length);
+    without.splice(safeIndex, 0, email);
+    return without;
+  }
+  function removePendingSwipeTrashUndo(emailId: string) {
+    setPendingSwipeTrashUndos((prev) => prev.filter((entry) => entry.email.id !== emailId));
+  }
+  function restoreSwipeTrashedEmail(entry: PendingSwipeTrashUndo) {
+    removePendingSwipeTrashUndo(entry.email.id);
+    if (
+      selectedAccountIdRef.current !== entry.sourceAccountId ||
+      selectedFolderPathRef.current !== entry.sourceFolderPath
+    ) {
+      return;
+    }
+    setEmails((prev) => upsertEmailAtIndex(prev, entry.email, entry.originalIndex));
+  }
+  function scheduleSwipeTrashWithUndo(email: Email) {
+    const originalIndex = emails.findIndex((entry) => entry.id === email.id);
+    if (originalIndex < 0) return false;
+    setUiError("");
+    setUiInfo("");
+    setEmails((prev) => prev.filter((entry) => entry.id !== email.id));
+    if (selectedEmail?.id === email.id) {
+      setSelectedEmail(null);
+      openMobilePane("middle");
+      setEmailDetailMenuOpen(false);
+    }
+    setPendingSwipeTrashUndos((prev) => {
+      const existing = prev.find((entry) => entry.email.id === email.id);
+      if (existing) window.clearTimeout(existing.timeoutId);
+      return prev.filter((entry) => entry.email.id !== email.id);
+    });
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        const res = await fetch(`/api/emails/${email.id}/move`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ targetSpecial: "trash" }),
+        });
+        if (!res.ok) {
+          setUiError(await readErrorMessage(res, "Swipe-Löschen fehlgeschlagen."));
+          const restoreEntry =
+            pendingSwipeTrashUndosRef.current.find((item) => item.email.id === email.id) ?? null;
+          removePendingSwipeTrashUndo(email.id);
+          if (
+            restoreEntry &&
+            selectedAccountIdRef.current === restoreEntry.sourceAccountId &&
+            selectedFolderPathRef.current === restoreEntry.sourceFolderPath
+          ) {
+            setEmails((current) =>
+              upsertEmailAtIndex(current, restoreEntry.email, restoreEntry.originalIndex),
+            );
+          }
+          return;
+        }
+        removePendingSwipeTrashUndo(email.id);
+        await reloadFolders();
+      })();
+    }, 5000);
+    swipeTrashUndoSeqRef.current += 1;
+    const undoEntry: PendingSwipeTrashUndo = {
+      id: `swipe-trash-${email.id}-${swipeTrashUndoSeqRef.current}`,
+      email,
+      originalIndex,
+      sourceAccountId: selectedAccountId,
+      sourceFolderPath: selectedFolderPath,
+      timeoutId,
+    };
+    setPendingSwipeTrashUndos((prev) => [...prev, undoEntry]);
+    return true;
+  }
   async function executeSwipeAction(email: Email, action: MobileSwipeAction) {
     if (action === "none") return false;
     if (action === "trash") {
-      await runActionForEmail(email.id, `/api/emails/${email.id}/move`, { targetSpecial: "trash" });
-      return true;
+      return scheduleSwipeTrashWithUndo(email);
     }
     if (action === "mark_read") {
       await runActionForEmail(email.id, `/api/emails/${email.id}/mark-read`);
@@ -1318,23 +1413,41 @@ export function MailWorkspace() {
 
   loadMoreEmailsRef.current = loadMoreEmails;
 
+  useEffect(() => {
+    pendingSwipeTrashUndosRef.current = pendingSwipeTrashUndos;
+  }, [pendingSwipeTrashUndos]);
+  useEffect(() => {
+    selectedAccountIdRef.current = selectedAccountId;
+  }, [selectedAccountId]);
+  useEffect(() => {
+    selectedFolderPathRef.current = selectedFolderPath;
+  }, [selectedFolderPath]);
+
   async function loadEmails() {
+    const requestId = ++activeLoadEmailsRequestIdRef.current;
     if (!selectedAccountId || !selectedFolderPath) {
-      setEmails([]);
-      setSelectedEmail(null);
-      emailsNextCursorRef.current = null;
-      emailsHasMoreRef.current = false;
-      setEmailsHasMore(false);
+      if (requestId === activeLoadEmailsRequestIdRef.current) {
+        setEmails([]);
+        setSelectedEmail(null);
+        emailsNextCursorRef.current = null;
+        emailsHasMoreRef.current = false;
+        setEmailsHasMore(false);
+      }
       return [] as Email[];
     }
     isLoadingEmailsRef.current = true;
-    setIsLoadingEmails(true);
-    setUiError("");
-    emailsNextCursorRef.current = null;
-    emailsHasMoreRef.current = false;
-    setEmailsHasMore(false);
+    if (requestId === activeLoadEmailsRequestIdRef.current) {
+      setIsLoadingEmails(true);
+      setUiError("");
+      emailsNextCursorRef.current = null;
+      emailsHasMoreRef.current = false;
+      setEmailsHasMore(false);
+    }
 
     const res = await fetch(`/api/search?${mailListSearchParams(null).toString()}`);
+    if (requestId !== activeLoadEmailsRequestIdRef.current) {
+      return [] as Email[];
+    }
     if (!res.ok) {
       setUiError(await readErrorMessage(res, "E-Mails konnten nicht geladen werden."));
       setEmails([]);
@@ -1348,6 +1461,9 @@ export function MailWorkspace() {
       emails?: Email[];
       pageInfo?: { nextCursor?: string | null; hasMore?: boolean };
     };
+    if (requestId !== activeLoadEmailsRequestIdRef.current) {
+      return [] as Email[];
+    }
     const nextEmails: Email[] = data.emails ?? [];
     const pageInfo = data.pageInfo;
     const nextC = pageInfo?.nextCursor ?? null;
@@ -2276,6 +2392,9 @@ export function MailWorkspace() {
       for (const timeoutId of Object.values(swipeFeedbackTimeoutsRef.current)) {
         if (typeof timeoutId === "number") window.clearTimeout(timeoutId);
       }
+      for (const pending of pendingSwipeTrashUndosRef.current) {
+        window.clearTimeout(pending.timeoutId);
+      }
     };
   }, []);
 
@@ -2897,6 +3016,28 @@ export function MailWorkspace() {
         <p className="glass-info px-4 py-2 text-sm">
           {uiInfo}
         </p>
+      ) : null}
+      {pendingSwipeTrashUndos.length > 0 ? (
+        <div className="glass-info flex flex-wrap items-center gap-2 px-4 py-2 text-sm" role="status" aria-live="polite">
+          <span className="font-medium">
+            {pendingSwipeTrashUndos.length === 1
+              ? "Mail wird in 5s in den Papierkorb verschoben."
+              : `${pendingSwipeTrashUndos.length} Mails werden in 5s in den Papierkorb verschoben.`}
+          </span>
+          {pendingSwipeTrashUndos.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => {
+                window.clearTimeout(entry.timeoutId);
+                restoreSwipeTrashedEmail(entry);
+              }}
+              className="glass-btn rounded-lg px-2 py-1 text-xs"
+            >
+              Rückgängig ({senderDisplayName(entry.email)})
+            </button>
+          ))}
+        </div>
       ) : null}
 
       {automationDashboardOpen ? (
@@ -3631,9 +3772,9 @@ export function MailWorkspace() {
                           >
                             {sender}
                           </span>
-                          <span className="shrink-0 text-right text-xs font-medium glass-text-secondary">
+                          <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium glass-text-secondary">
                             <span className="block">
-                              Eingang: {formatDateTimeShort(email.date ?? email.createdAt)}
+                              {formatDateTimeShort(email.date ?? email.createdAt)}
                             </span>
                           </span>
                             </span>
