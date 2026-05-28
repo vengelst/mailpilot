@@ -779,6 +779,9 @@ export function MailWorkspace() {
     print: "Drucken",
   };
   const rightDrawerEnabled = hasSelectedEmail;
+  const isMobileLeftPaneVisible = foldersOpen && mobilePane === "left";
+  const isMobileRightPaneVisible = mobilePane === "right" && rightDrawerEnabled;
+  const isMobileMiddlePaneVisible = mobilePane === "middle" || !isMobileRightPaneVisible;
 
   function clearSelection() {
     setSelectedIds(new Set());
@@ -2380,12 +2383,12 @@ export function MailWorkspace() {
   }, [selectedAccountId, selectedFolderPath, tab, query, hasAttachmentsFilter, actionRequiredFilter]);
 
   useEffect(() => {
-    if (!selectedEmail && mobilePane === "right") {
+    if (!rightDrawerEnabled && mobilePane === "right") {
       setMobilePane("middle");
     }
     if (!selectedEmail) setMobileMovePanelOpen(false);
     if (mobilePane !== "right") setMobileMovePanelOpen(false);
-  }, [selectedEmail, mobilePane]);
+  }, [selectedEmail, mobilePane, rightDrawerEnabled]);
 
   useEffect(() => {
     return () => {
@@ -3220,21 +3223,21 @@ export function MailWorkspace() {
       >
         <div
           className={`fixed inset-0 z-30 bg-black/35 transition-opacity duration-300 lg:hidden ${
-            mobilePane === "middle" ? "pointer-events-none opacity-0" : "opacity-100"
+            isMobileMiddlePaneVisible ? "pointer-events-none opacity-0" : "opacity-100"
           }`}
           onClick={() => openMobilePane("middle")}
-          aria-hidden={mobilePane === "middle"}
+          aria-hidden={isMobileMiddlePaneVisible}
         />
         {foldersOpen ? (
           <aside
-            className={`glass fixed inset-y-0 left-0 z-40 flex w-[min(92vw,26rem)] min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:translate-x-0 lg:pointer-events-auto ${
-              mobilePane === "left"
-                ? "translate-x-0 pointer-events-auto"
-                : "-translate-x-full pointer-events-none"
+            className={`glass fixed inset-y-0 left-0 flex w-[min(92vw,26rem)] min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:translate-x-0 lg:pointer-events-auto ${
+              isMobileLeftPaneVisible
+                ? "z-40 translate-x-0 pointer-events-auto"
+                : "z-0 -translate-x-full pointer-events-none"
             }`}
             style={{
               transform:
-                mobilePane === "left" && mobileDrawerDragX < 0
+                isMobileLeftPaneVisible && mobileDrawerDragX < 0
                   ? `translateX(${mobileDrawerDragX}px)`
                   : undefined,
             }}
@@ -3457,14 +3460,14 @@ export function MailWorkspace() {
         ) : null}
 
         <section
-          className={`glass-subtle relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 transition-transform duration-300 ease-out lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 lg:translate-x-0 lg:pointer-events-auto ${
-            mobilePane === "right"
-              ? "-translate-x-[18%] pointer-events-none"
-              : "translate-x-0 pointer-events-auto"
+          className={`glass-subtle relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-r-0 transition-[transform,opacity] duration-300 ease-out lg:z-10 lg:flex-none lg:w-[var(--mp-list-w)] lg:shrink-0 lg:translate-x-0 lg:pointer-events-auto lg:opacity-100 ${
+            isMobileMiddlePaneVisible
+              ? "z-20 translate-x-0 pointer-events-auto opacity-100"
+              : "z-0 -translate-x-[18%] pointer-events-none opacity-0"
           }`}
           style={{
             transform:
-              mobilePane === "middle"
+              isMobileMiddlePaneVisible && mobilePane === "middle"
                 ? `translateX(${mobileDrawerDragX > 0 ? Math.min(mobileDrawerDragX * 0.22, 64) : mobileDrawerDragX < 0 ? Math.max(mobileDrawerDragX * 0.22, -64) : 0}px)`
                 : undefined,
           }}
@@ -3874,14 +3877,14 @@ export function MailWorkspace() {
         <ResizeHandle onDrag={dragList} ariaLabel="Listenbreite ändern" />
 
         <section
-          className={`glass-heavy fixed inset-y-0 right-0 z-40 flex w-[min(96vw,40rem)] min-h-0 flex-col transition-transform duration-300 ease-out lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:translate-x-0 lg:pointer-events-auto ${
-            mobilePane === "right"
-              ? "translate-x-0 pointer-events-auto"
-              : "translate-x-full pointer-events-none"
+          className={`glass-heavy fixed inset-y-0 right-0 flex w-[min(96vw,40rem)] min-h-0 flex-col transition-[transform,opacity] duration-300 ease-out lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:translate-x-0 lg:pointer-events-auto lg:opacity-100 ${
+            isMobileRightPaneVisible
+              ? "z-40 translate-x-0 opacity-100 pointer-events-auto"
+              : "z-0 translate-x-[105%] opacity-0 pointer-events-none"
           }`}
           style={{
             transform:
-              mobilePane === "right" && mobileDrawerDragX > 0
+              isMobileRightPaneVisible && mobileDrawerDragX > 0
                 ? `translateX(${mobileDrawerDragX}px)`
                 : undefined,
           }}
