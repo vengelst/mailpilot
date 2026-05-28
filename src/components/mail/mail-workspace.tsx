@@ -869,7 +869,7 @@ export function MailWorkspace() {
       openMobilePane("middle");
       return;
     }
-    if (start.pane === "right" && deltaX > 0) {
+    if (start.pane === "right") {
       openMobilePane("middle");
     }
   }
@@ -2718,7 +2718,7 @@ export function MailWorkspace() {
 
 
   return (
-    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden">
+    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       <div
         className={`glass-solid z-20 shrink-0 items-center justify-between gap-2 border-b-0 px-2 py-1.5 lg:hidden ${
           mobileMainHeaderExpanded ? "hidden" : "flex"
@@ -3230,19 +3230,16 @@ export function MailWorkspace() {
         />
         {foldersOpen ? (
           <aside
-            className={`glass min-w-0 shrink-0 flex-col overflow-x-hidden border-r-0 lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:flex ${
+            className={`glass min-w-0 shrink-0 flex-col overflow-x-hidden overflow-y-auto border-r-0 lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:flex ${
               isMobileLeftPaneVisible
-                ? "fixed inset-y-0 left-0 z-40 flex w-[min(92vw,26rem)]"
+                ? "fixed inset-0 z-40 flex w-full"
                 : "hidden lg:flex"
             }`}
             style={{
-              transform:
-                isMobileLeftPaneVisible && mobileDrawerDragX < 0
-                  ? `translateX(${mobileDrawerDragX}px)`
-                  : undefined,
+              paddingTop: isMobileLeftPaneVisible ? "env(safe-area-inset-top)" : undefined,
             }}
           >
-            <div className="border-b glass-divider px-3 py-2 space-y-2">
+            <div className="shrink-0 border-b glass-divider px-3 py-2 space-y-2">
               <div className="flex items-center justify-between lg:hidden">
                 <span className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Navigation</span>
                 <button
@@ -3869,14 +3866,11 @@ export function MailWorkspace() {
         <section
           className={`glass-heavy min-h-0 flex-col lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:flex ${
             isMobileRightPaneVisible
-              ? "fixed inset-y-0 right-0 z-40 flex w-[min(96vw,40rem)]"
+              ? "fixed inset-0 z-40 flex"
               : "hidden lg:flex"
           }`}
           style={{
-            transform:
-              isMobileRightPaneVisible && mobileDrawerDragX > 0
-                ? `translateX(${mobileDrawerDragX}px)`
-                : undefined,
+            paddingTop: isMobileRightPaneVisible ? "env(safe-area-inset-top)" : undefined,
           }}
         >
           {selectedEmail ? (
@@ -4210,7 +4204,7 @@ export function MailWorkspace() {
                 <p className="px-4 py-2 text-sm glass-text-secondary">Lade Detail...</p>
               ) : null}
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-28 lg:pb-4 flex flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 pb-24 lg:px-4 lg:py-4 lg:pb-4 flex flex-col">
                 {selectedEmail.aiSummaryShort ? (
                   <div className="glass-info mb-4 rounded-xl p-3 text-sm">
                     <p className="font-semibold">KI-Zusammenfassung</p>
@@ -4387,7 +4381,7 @@ export function MailWorkspace() {
                       srcDoc={safeMailDocument}
                       referrerPolicy="no-referrer"
                       className="block w-full flex-1 rounded-xl glass"
-                      style={{ border: "none", maxWidth: "100%", minHeight: "calc(100dvh - 220px)", overflowX: "hidden" }}
+                      style={{ border: "none", maxWidth: "100%", minHeight: "calc(100dvh - 160px)", overflowX: "hidden" }}
                     />
                   </div>
                 ) : (
