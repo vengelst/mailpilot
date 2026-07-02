@@ -3885,9 +3885,6 @@ export function MailWorkspace() {
                           >
                             {sender}
                           </span>
-                          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums glass-text-secondary">
-                            {formatDateTimeShort(email.date ?? email.createdAt)}
-                          </span>
                             </span>
                             <span className="flex items-baseline justify-between gap-1">
                           <span
@@ -3897,6 +3894,9 @@ export function MailWorkspace() {
                           >
                             {email.subject || "(Ohne Betreff)"}
                           </span>
+                            </span>
+                            <span className="block text-xs tabular-nums glass-text-secondary">
+                              {formatDateTimeShort(email.date ?? email.createdAt)}
                             </span>
                             <span className="block truncate text-xs glass-text-muted">
                               {email.snippet ?? ""}
