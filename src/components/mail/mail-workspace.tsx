@@ -645,6 +645,7 @@ export function MailWorkspace() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [emptyFolderModalOpen, setEmptyFolderModalOpen] = useState(false);
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
+  const dragExpandTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [emptyConfirmText, setEmptyConfirmText] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showSyncMenu, setShowSyncMenu] = useState(false);
@@ -1050,13 +1051,32 @@ export function MailWorkspace() {
   }
   function handleFolderDragOver(e: React.DragEvent, path: string) {
     e.preventDefault();
-    setDragOverFolderPath(path);
+    if (dragOverFolderPath !== path) {
+      if (dragExpandTimeoutRef.current) clearTimeout(dragExpandTimeoutRef.current);
+      setDragOverFolderPath(path);
+      dragExpandTimeoutRef.current = setTimeout(() => {
+        setExpandedFolderPaths((prev) => {
+          if (prev.has(path)) return prev;
+          const next = new Set(prev);
+          next.add(path);
+          return next;
+        });
+      }, 800);
+    }
   }
   function handleFolderDragLeave() {
+    if (dragExpandTimeoutRef.current) {
+      clearTimeout(dragExpandTimeoutRef.current);
+      dragExpandTimeoutRef.current = null;
+    }
     setDragOverFolderPath(null);
   }
   function handleFolderDrop(e: React.DragEvent, targetPath: string) {
     e.preventDefault();
+    if (dragExpandTimeoutRef.current) {
+      clearTimeout(dragExpandTimeoutRef.current);
+      dragExpandTimeoutRef.current = null;
+    }
     setDragOverFolderPath(null);
     const emailId = e.dataTransfer.getData("text/x-mailpilot-email-id");
     if (!emailId) return;
