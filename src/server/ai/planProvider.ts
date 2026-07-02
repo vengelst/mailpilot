@@ -66,6 +66,7 @@ async function generateWithOpenAi(prompt: string, apiKey?: string): Promise<AiMa
     body: JSON.stringify({
       model: OPENAI_MODEL,
       temperature: 0.1,
+      max_tokens: 16000,
       messages: [
         {
           role: "system",
@@ -100,9 +101,9 @@ async function generateWithAnthropic(prompt: string, apiKey?: string): Promise<A
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 2000,
+      max_tokens: 16000,
       temperature: 0.1,
-      system: "Return only valid JSON matching the requested schema. No markdown.",
+      system: "Return only valid JSON matching the requested schema. No markdown. No explanations.",
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -111,10 +112,12 @@ async function generateWithAnthropic(prompt: string, apiKey?: string): Promise<A
   }
   const data = (await response.json()) as {
     content?: Array<{ type?: string; text?: string }>;
+    stop_reason?: string;
   };
   const content = data.content?.find((block) => block.type === "text")?.text;
   if (!content) throw new Error("Anthropic plan response had no content");
-  return parseAndValidate(JSON.parse(extractJson(content)));
+  const jsonStr = extractJson(content);
+  return parseAndValidate(JSON.parse(jsonStr));
 }
 
 export async function generateMailPlan(input: {
