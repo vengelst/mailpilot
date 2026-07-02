@@ -37,6 +37,32 @@ function buildDownloadFilename(filename: string | null | undefined, mimeType: st
   return ext ? `attachment.${ext}` : safe;
 }
 
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  svg: "image/svg+xml",
+  txt: "text/plain",
+  csv: "text/csv",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  zip: "application/zip",
+};
+
+function detectMimeType(filename: string | null | undefined, mimeType: string | null | undefined): string {
+  if (mimeType) return mimeType;
+  const ext = (filename || "").split(".").pop()?.toLowerCase() || "";
+  return EXTENSION_MIME_MAP[ext] || "application/octet-stream";
+}
+
 function escapeHtml(input: string) {
   return input
     .replaceAll("&", "&amp;")
@@ -82,7 +108,7 @@ export async function GET(
     const url = new URL(req.url);
     const disposition = url.searchParams.get("download") === "1" ? "attachment" : "inline";
     const filename = buildDownloadFilename(attachment.filename, attachment.mimeType);
-    const mimeType = attachment.mimeType || "application/octet-stream";
+    const mimeType = detectMimeType(attachment.filename, attachment.mimeType);
 
     return new Response(new Uint8Array(content), {
       headers: {
