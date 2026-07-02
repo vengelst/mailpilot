@@ -84,9 +84,20 @@ export function buildPlanPrompt(input: {
   }));
 
   return [
-    "Du bist ein E-Mail-Assistent für MailPilot. Der Benutzer beschreibt einen",
-    "Auftrag in Freitext. Erzeuge daraus einen Plan aus diskreten Aktionen pro E-Mail.",
-    "Antworte AUSSCHLIESSLICH mit JSON, ohne Markdown.",
+    "Du bist ein E-Mail-Assistent für MailPilot, ein Geschäfts-Mail-System.",
+    "Der Benutzer beschreibt einen Auftrag in Freitext. Erzeuge daraus einen Plan",
+    "aus diskreten Aktionen pro E-Mail. Antworte AUSSCHLIESSLICH mit JSON, ohne Markdown.",
+    "",
+    "WICHTIGER KONTEXT — Kunden vs. Lieferanten:",
+    "  Der Benutzer ist ein Geschäftsinhaber. Wenn er von 'Kunden' spricht, meint er",
+    "  seine EIGENEN Kunden — Firmen und Personen, die bei IHM einkaufen oder seine",
+    "  Dienste nutzen (z.B. individuelle Firmennamen wie Telsecuriton, bestimmte Personen).",
+    "  'Lieferanten' sind Firmen, die dem Benutzer etwas verkaufen oder bereitstellen.",
+    "  Bekannte Großkonzerne und Online-Shops sind IMMER Lieferanten/Dienstleister:",
+    "  Amazon, Google, Microsoft, IONOS, Telekom, Vodafone, DHL, PayPal, eBay, Apple,",
+    "  Hetzner, OVH, Strato, Netflix, Spotify — das sind KEINE Kunden des Benutzers.",
+    "  Rechnungen VON solchen Firmen = Lieferanten-Rechnungen (der Benutzer ZAHLT).",
+    "  Rechnungen AN individuelle Firmennamen = Kunden (der Benutzer BEKOMMT Geld).",
     "",
     "Erlaubte Aktionstypen:",
     "  - categorize       (nur lokale Kategorie setzen)",
@@ -99,6 +110,7 @@ export function buildPlanPrompt(input: {
     "Regeln:",
     "  - emailId ist der numerische Index (idx) aus der Kandidatenliste.",
     "  - targetFolder MUSS ein Pfad aus availableFolders sein.",
+    "  - Pro E-Mail nur EINE Aktion (die wichtigste). Keine Duplikate.",
     "  - Klassifiziere ALLE Mails die zum Auftrag passen, nicht nur einige wenige.",
     "  - Bei Unsicherheit: confidence niedrig setzen (0.5-0.7), aber trotzdem vorschlagen.",
     "  - Niemals dauerhaftes Löschen vorschlagen.",
@@ -113,24 +125,35 @@ export function buildPlanPrompt(input: {
     "Kandidaten-Mails (idx = ID für emailId):",
     JSON.stringify(compactCandidates),
     "",
-    'Antworte mit JSON: { "summary": "...", "actions": [{ "type": "move", "emailId": "0", "targetFolder": "INBOX/Kunden", "reason": "...", "confidence": 0.9 }, ...] }',
+    'Antworte mit JSON: { "summary": "...", "actions": [{ "type": "move", "emailId": "0", "targetFolder": "INBOX/Lieferanten", "reason": "Amazon-Rechnung = Lieferant", "confidence": 0.9 }, ...] }',
     "emailId ist IMMER der idx-Wert als String (z.B. \"0\", \"1\", \"42\").",
   ].join("\n");
 }
 
 /**
  * After AI responds with numeric index-based emailIds,
- * map them back to real database IDs.
+ * map them back to real database IDs and deduplicate
+ * (one action per email, highest confidence wins).
  */
 export function remapPlanIds(plan: AiMailPlan, candidates: AiMailCandidate[]): AiMailPlan {
+  const mapped = plan.actions
+    .map((action) => {
+      const idx = parseInt(action.emailId, 10);
+      if (isNaN(idx) || idx < 0 || idx >= candidates.length) return null;
+      return { ...action, emailId: candidates[idx].id };
+    })
+    .filter((a): a is NonNullable<typeof a> => a !== null);
+
+  const best = new Map<string, (typeof mapped)[number]>();
+  for (const action of mapped) {
+    const existing = best.get(action.emailId);
+    if (!existing || action.confidence > existing.confidence) {
+      best.set(action.emailId, action);
+    }
+  }
+
   return {
     summary: plan.summary,
-    actions: plan.actions
-      .map((action) => {
-        const idx = parseInt(action.emailId, 10);
-        if (isNaN(idx) || idx < 0 || idx >= candidates.length) return null;
-        return { ...action, emailId: candidates[idx].id };
-      })
-      .filter((a): a is NonNullable<typeof a> => a !== null),
+    actions: Array.from(best.values()),
   };
 }
