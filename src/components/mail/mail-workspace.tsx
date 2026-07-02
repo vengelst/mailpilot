@@ -174,6 +174,10 @@ type FolderTreeRowProps = {
   selectedPath: string;
   onSelect: (path: string) => void;
   countDisplayMode: "compact" | "uga";
+  dragOverPath?: string;
+  onDragOver?: (e: React.DragEvent, path: string) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent, path: string) => void;
 };
 
 function FolderTreeRow({
@@ -184,10 +188,15 @@ function FolderTreeRow({
   selectedPath,
   onSelect,
   countDisplayMode,
+  dragOverPath,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: FolderTreeRowProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.path);
   const isActive = node.folder?.path === selectedPath;
+  const isDragOver = dragOverPath === node.path && !!node.folder;
   const unread = node.folder?.unreadCount ?? 0;
   const total = node.folder?.totalCount ?? 0;
   const read = Math.max(0, total - unread);
@@ -198,10 +207,15 @@ function FolderTreeRow({
   return (
     <li>
       <div
-        className={`flex items-center gap-1 pr-2 rounded-lg mx-1 ${
-          isActive ? "glass-active" : unread > 0 ? "glass-text-primary font-medium" : "glass-text-secondary"
+        className={`flex items-center gap-1 pr-2 rounded-lg mx-1 transition-colors ${
+          isDragOver ? "ring-2 ring-blue-500 bg-blue-100/50 dark:bg-blue-900/30" : ""
+        } ${
+          isActive && !isDragOver ? "glass-active" : !isDragOver && unread > 0 ? "glass-text-primary font-medium" : !isDragOver ? "glass-text-secondary" : ""
         }`}
         style={{ paddingLeft: indent }}
+        onDragOver={(e) => { if (node.folder && onDragOver) { e.preventDefault(); onDragOver(e, node.path); } }}
+        onDragLeave={(e) => { if (onDragLeave) onDragLeave(e); }}
+        onDrop={(e) => { if (node.folder && onDrop) { e.preventDefault(); onDrop(e, node.path); } }}
       >
         {hasChildren ? (
           <button
@@ -255,6 +269,10 @@ function FolderTreeRow({
               selectedPath={selectedPath}
               onSelect={onSelect}
               countDisplayMode={countDisplayMode}
+              dragOverPath={dragOverPath}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
             />
           ))}
         </ul>
@@ -626,6 +644,7 @@ export function MailWorkspace() {
     useState<AttachmentHoverPreview | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [emptyFolderModalOpen, setEmptyFolderModalOpen] = useState(false);
+  const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
   const [emptyConfirmText, setEmptyConfirmText] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showSyncMenu, setShowSyncMenu] = useState(false);
@@ -1029,6 +1048,21 @@ export function MailWorkspace() {
       showMailSwipeFeedback(email.id, action);
     }
   }
+  function handleFolderDragOver(e: React.DragEvent, path: string) {
+    e.preventDefault();
+    setDragOverFolderPath(path);
+  }
+  function handleFolderDragLeave() {
+    setDragOverFolderPath(null);
+  }
+  function handleFolderDrop(e: React.DragEvent, targetPath: string) {
+    e.preventDefault();
+    setDragOverFolderPath(null);
+    const emailId = e.dataTransfer.getData("text/x-mailpilot-email-id");
+    if (!emailId) return;
+    void runActionForEmail(emailId, `/api/emails/${emailId}/move`, { targetFolder: targetPath });
+  }
+
   function toggleSelected(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -3441,6 +3475,10 @@ export function MailWorkspace() {
                             onToggle={toggleFolderExpanded}
                             selectedPath={selectedFolderPath}
                             countDisplayMode={folderCountDisplayMode}
+                            dragOverPath={dragOverFolderPath ?? undefined}
+                            onDragOver={handleFolderDragOver}
+                            onDragLeave={handleFolderDragLeave}
+                            onDrop={handleFolderDrop}
                             onSelect={(path) => {
                               setSelectedFolderPath(path);
                               setSelectedEmail(null);
@@ -3700,6 +3738,11 @@ export function MailWorkspace() {
                         {swipePreviewDirection || swipeFeedbackAction ? swipeActiveLabel : ""}
                       </div>
                     <div
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/x-mailpilot-email-id", email.id);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
                       onContextMenu={(e) => openMailContextMenu(e, email)}
                       onTouchStart={(e) => handleMailRowSwipeStart(email.id, e)}
                       onTouchMove={(e) => handleMailRowSwipeMove(email.id, e)}
@@ -3707,7 +3750,7 @@ export function MailWorkspace() {
                         void handleMailRowSwipeEnd(email, e);
                       }}
                       style={{ transform: `translateX(${swipeOffset}px)` }}
-                      className={`flex w-full min-w-0 items-start gap-2 overflow-hidden rounded-xl px-2 py-2 text-left transition-all ${
+                      className={`flex w-full min-w-0 items-start gap-2 overflow-hidden rounded-xl px-2 py-2 text-left transition-all cursor-grab active:cursor-grabbing ${
                         isSelected || isChecked
                           ? "glass-selected border-2"
                           : "border-2 border-transparent hover:bg-white/40"
