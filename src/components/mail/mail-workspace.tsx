@@ -4287,27 +4287,9 @@ export function MailWorkspace() {
                           >
                             <div className="flex flex-wrap items-start justify-between gap-2">
                               <div className="min-w-0">
-                                {(() => {
-                                  const mime = (attachment.mimeType || "").toLowerCase().split(";")[0].trim();
-                                  const canPreview = mime.startsWith("image/") || mime === "application/pdf";
-                                  return canPreview ? (
-                                    <button
-                                      onClick={() => setAttachmentPreviewOpen((prev) => {
-                                        const next = new Set(prev);
-                                        if (next.has(attachment.id)) next.delete(attachment.id);
-                                        else next.add(attachment.id);
-                                        return next;
-                                      })}
-                                      className="break-all font-medium text-blue-700 hover:underline text-left"
-                                    >
-                                      📎 {getAttachmentDisplayName(attachment)}
-                                    </button>
-                                  ) : (
-                                    <span className="break-all font-medium glass-text-primary">
-                                      📎 {getAttachmentDisplayName(attachment)}
-                                    </span>
-                                  );
-                                })()}
+                                <span className="break-all font-medium glass-text-primary">
+                                  📎 {getAttachmentDisplayName(attachment)}
+                                </span>
                                 <p className="text-xs glass-text-tertiary">
                                   {attachment.mimeType || "unbekannt"} ·{" "}
                                   {attachment.size ?? 0} Bytes
