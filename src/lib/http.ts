@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 function toJsonSafe(value: unknown): unknown {
   if (typeof value === "bigint") return value.toString();
+  if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(toJsonSafe);
   if (value && typeof value === "object") {
     const result: Record<string, unknown> = {};
