@@ -3,6 +3,7 @@ import {
   AiMailPlan,
   aiMailPlanSchema,
   buildPlanPrompt,
+  remapPlanIds,
 } from "@/server/ai/mailPlan";
 
 const OPENAI_MODEL = "gpt-4o-mini";
@@ -136,11 +137,14 @@ export async function generateMailPlan(input: {
     ((process.env.AI_PROVIDER ?? "mock").toLowerCase() as "mock" | "openai" | "anthropic");
   const fullPrompt = buildPlanPrompt(input);
 
+  let rawPlan: AiMailPlan;
   if (provider === "openai") {
-    return generateWithOpenAi(fullPrompt, input.runtimeConfig?.openAiApiKey);
+    rawPlan = await generateWithOpenAi(fullPrompt, input.runtimeConfig?.openAiApiKey);
+  } else if (provider === "anthropic") {
+    rawPlan = await generateWithAnthropic(fullPrompt, input.runtimeConfig?.anthropicApiKey);
+  } else {
+    return mockPlan(input);
   }
-  if (provider === "anthropic") {
-    return generateWithAnthropic(fullPrompt, input.runtimeConfig?.anthropicApiKey);
-  }
-  return mockPlan(input);
+
+  return remapPlanIds(rawPlan, input.candidates);
 }

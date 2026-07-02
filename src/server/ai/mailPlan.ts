@@ -89,73 +89,34 @@ export function buildPlanPrompt(input: {
   candidates: AiMailCandidate[];
   availableFolders: string[];
 }) {
-  const allowedActionsExample = JSON.stringify(
-    {
-      summary: "kurze Zusammenfassung dessen, was du vorhast",
-      actions: [
-        {
-          type: "categorize",
-          emailId: "<emailId>",
-          category: "invoice",
-          reason: "kurze Begründung",
-          confidence: 0.9,
-        },
-        {
-          type: "move",
-          emailId: "<emailId>",
-          targetFolder: "<existing folder path>",
-          reason: "kurze Begründung",
-          confidence: 0.92,
-        },
-        {
-          type: "move_trash",
-          emailId: "<emailId>",
-          reason: "warum Papierkorb sicher ist",
-          confidence: 0.97,
-        },
-        {
-          type: "move_spam",
-          emailId: "<emailId>",
-          reason: "warum Spam sicher ist",
-          confidence: 0.95,
-        },
-        {
-          type: "mark_read",
-          emailId: "<emailId>",
-          reason: "optional",
-          confidence: 0.6,
-        },
-        {
-          type: "create_contact_candidate",
-          emailId: "<emailId>",
-          reason: "Kontakt im Inhalt erkannt",
-          confidence: 0.85,
-        },
-      ],
-    },
-    null,
-    2,
-  );
+  const compactCandidates = input.candidates.map((c, i) => ({
+    idx: i,
+    subject: c.subject || "(kein Betreff)",
+    from: c.fromName || c.fromEmail || "?",
+    folder: c.folderPath,
+    snippet: c.snippet ? c.snippet.slice(0, 80) : undefined,
+  }));
 
   return [
     "Du bist ein E-Mail-Assistent für MailPilot. Der Benutzer beschreibt einen",
-    "Auftrag in Freitext. Erzeuge daraus einen Plan aus diskreten, sicheren",
-    "Aktionen pro E-Mail. Antworte AUSSCHLIESSLICH mit JSON, ohne Markdown.",
+    "Auftrag in Freitext. Erzeuge daraus einen Plan aus diskreten Aktionen pro E-Mail.",
+    "Antworte AUSSCHLIESSLICH mit JSON, ohne Markdown.",
     "",
     "Erlaubte Aktionstypen:",
-    "  - categorize       (nur lokale Kategorie setzen, IMAP unangetastet)",
+    "  - categorize       (nur lokale Kategorie setzen)",
     "  - move             (Verschieben nach existierendem Ordnerpfad)",
     "  - move_trash       (Move nach Trash — KEIN endgültiges Löschen)",
     "  - move_spam        (Move nach Spam/Junk)",
     "  - mark_read        (\\Seen-Flag setzen)",
     "  - create_contact_candidate (Kontaktvorschlag aus E-Mail-Inhalt)",
     "",
-    "Strenge Regeln:",
-    "  - emailId muss aus der Liste kommen, die du gleich bekommst.",
-    "  - targetFolder muss aus availableFolders kommen.",
-    "  - Bei Unsicherheit: confidence niedrig oder gar keine Aktion.",
-    "  - Lieber weniger, dafür sichere Aktionen.",
+    "Regeln:",
+    "  - emailId ist der numerische Index (idx) aus der Kandidatenliste.",
+    "  - targetFolder MUSS ein Pfad aus availableFolders sein.",
+    "  - Klassifiziere ALLE Mails die zum Auftrag passen, nicht nur einige wenige.",
+    "  - Bei Unsicherheit: confidence niedrig setzen (0.5-0.7), aber trotzdem vorschlagen.",
     "  - Niemals dauerhaftes Löschen vorschlagen.",
+    "  - Wenn ein Ordner nicht existiert aber logisch wäre, verwende den nächstbesten existierenden.",
     "",
     "Auftrag des Benutzers:",
     JSON.stringify(input.prompt),
@@ -163,10 +124,27 @@ export function buildPlanPrompt(input: {
     "Verfügbare Ordnerpfade:",
     JSON.stringify(input.availableFolders),
     "",
-    "Kandidaten-Mails (nur Metadaten):",
-    JSON.stringify(input.candidates),
+    "Kandidaten-Mails (idx = ID für emailId):",
+    JSON.stringify(compactCandidates),
     "",
-    "Erwartetes JSON-Schema:",
-    allowedActionsExample,
+    'Antworte mit JSON: { "summary": "...", "actions": [{ "type": "move", "emailId": "0", "targetFolder": "INBOX/Kunden", "reason": "...", "confidence": 0.9 }, ...] }',
+    "emailId ist IMMER der idx-Wert als String (z.B. \"0\", \"1\", \"42\").",
   ].join("\n");
+}
+
+/**
+ * After AI responds with numeric index-based emailIds,
+ * map them back to real database IDs.
+ */
+export function remapPlanIds(plan: AiMailPlan, candidates: AiMailCandidate[]): AiMailPlan {
+  return {
+    summary: plan.summary,
+    actions: plan.actions
+      .map((action) => {
+        const idx = parseInt(action.emailId, 10);
+        if (isNaN(idx) || idx < 0 || idx >= candidates.length) return null;
+        return { ...action, emailId: candidates[idx].id };
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null),
+  };
 }
