@@ -3230,16 +3230,16 @@ export function MailWorkspace() {
         />
         {foldersOpen ? (
           <aside
-            className={`glass min-w-0 shrink-0 flex-col overflow-x-hidden overflow-y-auto border-r-0 lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:flex ${
+            className={`glass min-w-0 shrink-0 overflow-x-hidden border-r-0 lg:static lg:z-auto lg:max-h-none lg:w-[var(--mp-folder-w)] lg:shrink-0 lg:flex lg:flex-col ${
               isMobileLeftPaneVisible
-                ? "fixed inset-0 z-40 flex w-full"
+                ? "fixed inset-0 z-40 block overflow-y-auto"
                 : "hidden lg:flex"
             }`}
             style={{
               paddingTop: isMobileLeftPaneVisible ? "env(safe-area-inset-top)" : undefined,
             }}
           >
-            <div className="shrink-0 border-b glass-divider px-3 py-2 space-y-2">
+            <div className="lg:shrink-0 border-b glass-divider px-3 py-2 space-y-2">
               <div className="flex items-center justify-between lg:hidden">
                 <span className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Navigation</span>
                 <button
@@ -3405,7 +3405,7 @@ export function MailWorkspace() {
                 </label>
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto py-1 text-sm">
+            <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto overflow-x-hidden py-1 text-sm">
               {folders.length === 0 ? (
                 <p className="px-3 py-2 text-xs glass-text-muted">
                   {selectedAccountId ? "Lade Ordner..." : "Kein Konto gewählt."}
@@ -3864,9 +3864,9 @@ export function MailWorkspace() {
         <ResizeHandle onDrag={dragList} ariaLabel="Listenbreite ändern" />
 
         <section
-          className={`glass-heavy min-h-0 flex-col lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:flex ${
+          className={`glass-heavy min-h-0 lg:flex-col lg:static lg:z-auto lg:min-w-0 lg:flex-1 lg:w-auto lg:flex ${
             isMobileRightPaneVisible
-              ? "fixed inset-0 z-40 flex"
+              ? "fixed inset-0 z-40 block overflow-y-auto"
               : "hidden lg:flex"
           }`}
           style={{
@@ -4204,7 +4204,7 @@ export function MailWorkspace() {
                 <p className="px-4 py-2 text-sm glass-text-secondary">Lade Detail...</p>
               ) : null}
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 pb-24 lg:px-4 lg:py-4 lg:pb-4 flex flex-col">
+              <div className="px-3 py-2 pb-24 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4 lg:py-4 lg:pb-4 flex flex-col">
                 {selectedEmail.aiSummaryShort ? (
                   <div className="glass-info mb-4 rounded-xl p-3 text-sm">
                     <p className="font-semibold">KI-Zusammenfassung</p>
@@ -4380,8 +4380,8 @@ export function MailWorkspace() {
                       sandbox="allow-scripts"
                       srcDoc={safeMailDocument}
                       referrerPolicy="no-referrer"
-                      className="block w-full flex-1 rounded-xl glass"
-                      style={{ border: "none", maxWidth: "100%", minHeight: "calc(100dvh - 160px)", overflowX: "hidden" }}
+                      className="block w-full rounded-xl glass lg:flex-1"
+                      style={{ border: "none", maxWidth: "100%", minHeight: "80dvh", overflowX: "hidden" }}
                     />
                   </div>
                 ) : (
