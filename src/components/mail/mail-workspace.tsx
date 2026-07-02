@@ -1857,24 +1857,27 @@ export function MailWorkspace() {
   }
 
   async function runActionForEmail(emailId: string, path: string, payload?: object) {
+    const prevEmails = emails;
+    const wasSelected = selectedEmail?.id === emailId;
+    setEmails((prev) => prev.filter((e) => e.id !== emailId));
+    if (wasSelected) {
+      setSelectedEmail(null);
+      setMobilePane("middle");
+      setEmailDetailMenuOpen(false);
+    }
+
     const res = await fetch(path, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: payload ? JSON.stringify(payload) : undefined,
     });
     if (!res.ok) {
+      setEmails(prevEmails);
       setUiError(await readErrorMessage(res, "Aktion fehlgeschlagen."));
       return;
     }
-    const nextEmails = await loadEmails();
-    if (nextEmails.some((email) => email.id === emailId)) {
-      await loadEmail(emailId);
-    } else {
-      setSelectedEmail(null);
-      setMobilePane("middle");
-      setEmailDetailMenuOpen(false);
-    }
-    await reloadFolders();
+    void loadEmails();
+    void reloadFolders();
   }
 
   async function runAction(path: string, payload?: object) {
