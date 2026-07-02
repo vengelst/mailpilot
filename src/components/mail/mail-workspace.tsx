@@ -96,6 +96,28 @@ type Account = {
   imapUsername: string;
 };
 
+const ACCOUNT_COLORS = [
+  { bg: "#dbeafe", text: "#1e40af" },
+  { bg: "#dcfce7", text: "#166534" },
+  { bg: "#fef3c7", text: "#92400e" },
+  { bg: "#ede9fe", text: "#5b21b6" },
+  { bg: "#fce7f3", text: "#9d174d" },
+  { bg: "#ccfbf1", text: "#115e59" },
+];
+
+function getAccountBadgeInfo(
+  accounts: Account[],
+  accountId: string,
+): { label: string; bg: string; text: string } | null {
+  const idx = accounts.findIndex((a) => a.id === accountId);
+  if (idx === -1) return null;
+  const account = accounts[idx];
+  const raw = account.name || account.imapUsername?.split("@")[0] || "";
+  const label = raw.length > 8 ? raw.slice(0, 8) : raw;
+  const color = ACCOUNT_COLORS[idx % ACCOUNT_COLORS.length];
+  return { label, bg: color.bg, text: color.text };
+}
+
 type Folder = {
   path: string;
   displayName: string;
@@ -3855,6 +3877,18 @@ export function MailWorkspace() {
                               </span>
                             ) : null}
                             <span className="mt-1 flex flex-wrap gap-1">
+                              {(() => {
+                                const badge = getAccountBadgeInfo(accounts, email.accountId);
+                                if (!badge) return null;
+                                return (
+                                  <span
+                                    className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                    style={{ backgroundColor: badge.bg, color: badge.text }}
+                                  >
+                                    {badge.label}
+                                  </span>
+                                );
+                              })()}
                               {email.aiCategory ? (
                                 <span className="glass-badge-accent text-[10px]">
                                   {email.aiCategory}
