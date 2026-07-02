@@ -3713,17 +3713,29 @@ export function MailWorkspace() {
                           : "border-2 border-transparent hover:bg-white/40"
                       }`}
                     >
-                      <label
-                        className="mt-2 flex shrink-0 cursor-pointer items-center px-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleSelected(email.id)}
-                          aria-label="E-Mail auswählen"
-                        />
-                      </label>
+                      <div className="mt-2 flex shrink-0 flex-col items-center gap-1 px-1" onClick={(e) => e.stopPropagation()}>
+                        <label className="flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelected(email.id)}
+                            aria-label="E-Mail auswählen"
+                          />
+                        </label>
+                        <button
+                          onClick={() => {
+                            void runActionForEmail(email.id, `/api/emails/${email.id}/move`, { targetSpecial: "trash" });
+                          }}
+                          className="rounded p-0.5 text-gray-400 hover:text-red-600 transition-colors"
+                          aria-label="In Papierkorb verschieben"
+                          title="Papierkorb"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      </div>
                       <div className="flex min-w-0 flex-1 items-start gap-2 overflow-hidden">
                         <button
                           onClick={() => loadEmail(email.id)}
