@@ -267,10 +267,17 @@ const TRASH_PATTERNS = [
 ];
 
 const SPAM_OR_MOVE_PATTERNS = [
-  /\bverschiebe\b/,
-  /\bsortier(e|en)\b/,
-  /\borganisier(e|en)\b/,
-  /\bin\s+den\s+ordner\b/,
+  /\bverschieb(e|en|t)\b/,
+  /\bsortier(e|en|t)\b/,
+  /\borganisier(e|en|t)\b/,
+  /\bgruppier(e|en|t)\b/,
+  /\bordn(e|en|et)\b/,
+  /\bstrukturier(e|en|t)\b/,
+  /\b(räum|raeum)\w*\s*auf\b/,
+  /\baufr(ä|ae)um(e|en|t)?\b/,
+  /\bin\s+(den\s+|einen\s+)?ordner\b/,
+  /\bin\s+(das\s+)?verzeichnis\b/,
+  /\bnach\s+kategorie(n)?\b/,
   /\bin\s+spam\b/,
   /\bmark(iere|ier)?\s+als\b/,
   /\bblockier(e|en|t)\b/,

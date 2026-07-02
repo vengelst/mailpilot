@@ -312,6 +312,27 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const actionEmailIds = plan.actions.map((a) => a.emailId);
+    const actionEmails =
+      actionEmailIds.length > 0
+        ? (
+            await prisma.emailIndex.findMany({
+              where: { id: { in: actionEmailIds } },
+              select: {
+                id: true,
+                subject: true,
+                fromEmail: true,
+                fromName: true,
+                date: true,
+                folderPath: true,
+              },
+            })
+          ).map((e) => ({
+            ...e,
+            date: e.date ? e.date.toISOString() : null,
+          }))
+        : [];
+
     return ok({
       kind: "plan",
       intent: effectiveIntent,
@@ -321,6 +342,7 @@ export async function POST(req: NextRequest) {
       plan,
       candidateCount: candidates.length,
       promptFilter,
+      actionEmails,
     });
   } catch (error) {
     // Zod errors have a multi-line JSON-ish message — translate to plain text.

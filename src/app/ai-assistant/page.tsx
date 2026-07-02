@@ -77,6 +77,15 @@ type ProviderStatus = {
   warning: string | null;
 };
 
+type ActionEmailDetail = {
+  id: string;
+  subject: string | null;
+  fromName: string | null;
+  fromEmail: string | null;
+  date: string | null;
+  folderPath: string;
+};
+
 type PlanResponse = {
   kind: "count" | "search" | "plan";
   intent?: string;
@@ -88,14 +97,8 @@ type PlanResponse = {
   total?: number;
   byFolder?: Array<{ folderPath: string; count: number }>;
   bySender?: Array<{ fromEmail: string | null; fromName: string | null; count: number }>;
-  sampleEmails?: Array<{
-    id: string;
-    subject: string | null;
-    fromName: string | null;
-    fromEmail: string | null;
-    date: string | null;
-    folderPath: string;
-  }>;
+  sampleEmails?: Array<ActionEmailDetail>;
+  actionEmails?: Array<ActionEmailDetail>;
   promptFilter?: { terms: string[]; daysBack: number | null };
 };
 
@@ -140,7 +143,9 @@ export default function AiAssistantPage() {
     byFolder?: Array<{ folderPath: string; count: number }>;
     bySender?: Array<{ fromEmail: string | null; fromName: string | null; count: number }>;
     sampleEmails?: PlanResponse["sampleEmails"];
+    actionEmails?: PlanResponse["actionEmails"];
   } | null>(null);
+  const [excludedActions, setExcludedActions] = useState<Set<number>>(new Set());
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
   const [outcomes, setOutcomes] = useState<ExecutionOutcome[] | null>(null);
   const [executionSummary, setExecutionSummary] = useState<{
@@ -215,6 +220,7 @@ export default function AiAssistantPage() {
     setPlanMeta(null);
     setOutcomes(null);
     setExecutionSummary(null);
+    setExcludedActions(new Set());
     try {
       const res = await fetch("/api/ai-mail/plan", {
         method: "POST",
@@ -252,6 +258,7 @@ export default function AiAssistantPage() {
         byFolder: data.byFolder,
         bySender: data.bySender,
         sampleEmails: data.sampleEmails,
+        actionEmails: data.actionEmails,
       });
     } finally {
       setBusy(false);
@@ -260,14 +267,24 @@ export default function AiAssistantPage() {
 
   async function executePlan() {
     if (!plan || !accountId) return;
+    const filteredPlan: AiMailPlan = {
+      ...plan,
+      actions: plan.actions.filter((_, i) => !excludedActions.has(i)),
+    };
+    if (filteredPlan.actions.length === 0) {
+      setError("Keine Aktionen ausgewählt.");
+      return;
+    }
     if (
       !window.confirm(
-        `Plan jetzt ausführen?\n\n${plan.actions.length} Aktion(en):\n` +
-          plan.actions
+        `Plan jetzt ausführen?\n\n${filteredPlan.actions.length} Aktion(en):\n` +
+          filteredPlan.actions
             .slice(0, 8)
             .map((a) => `- ${a.type}` + ("targetFolder" in a ? ` → ${a.targetFolder}` : ""))
             .join("\n") +
-          (plan.actions.length > 8 ? `\n…und ${plan.actions.length - 8} weitere` : ""),
+          (filteredPlan.actions.length > 8
+            ? `\n…und ${filteredPlan.actions.length - 8} weitere`
+            : ""),
       )
     ) {
       return;
@@ -278,7 +295,7 @@ export default function AiAssistantPage() {
       const res = await fetch("/api/ai-mail/execute", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ accountId, plan }),
+        body: JSON.stringify({ accountId, plan: filteredPlan }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -297,26 +314,61 @@ export default function AiAssistantPage() {
     }
   }
 
+  const emailDetailsById = useMemo(() => {
+    const map = new Map<string, ActionEmailDetail>();
+    if (planMeta?.actionEmails) {
+      for (const e of planMeta.actionEmails) map.set(e.id, e);
+    }
+    return map;
+  }, [planMeta]);
+
   const actionPreview = useMemo(() => {
     if (!plan) return [];
     return plan.actions.map((a, i) => {
-      let detail = "";
-      if (a.type === "categorize") detail = `Kategorie: ${a.category}`;
-      if (a.type === "move") detail = `Ziel: ${a.targetFolder}`;
-      if (a.type === "move_trash") detail = "→ Papierkorb";
-      if (a.type === "move_spam") detail = "→ Spam";
-      if (a.type === "mark_read") detail = "als gelesen markieren";
-      if (a.type === "create_contact_candidate") detail = "Kontakt extrahieren";
-      const reason = "reason" in a && a.reason ? ` · ${a.reason}` : "";
+      let targetLabel = "";
+      if (a.type === "categorize") targetLabel = `Kategorie: ${a.category}`;
+      if (a.type === "move") targetLabel = a.targetFolder;
+      if (a.type === "move_trash") targetLabel = "Papierkorb";
+      if (a.type === "move_spam") targetLabel = "Spam";
+      if (a.type === "mark_read") targetLabel = "als gelesen markieren";
+      if (a.type === "create_contact_candidate") targetLabel = "Kontakt extrahieren";
+      const email = emailDetailsById.get(a.emailId);
       return {
         index: i,
         type: a.type,
         emailId: a.emailId,
         confidence: a.confidence,
-        text: `${detail}${reason}`,
+        targetLabel,
+        subject: email?.subject || "(Ohne Betreff)",
+        fromName: email?.fromName || email?.fromEmail || "Unbekannt",
+        fromFolder: email?.folderPath || "",
+        date: email?.date ? new Date(email.date).toLocaleDateString("de-DE") : null,
       };
     });
-  }, [plan]);
+  }, [plan, emailDetailsById]);
+
+  const actionGroups = useMemo(() => {
+    if (!plan || plan.actions.length === 0) return [];
+    const groups = new Map<string, number>();
+    for (let i = 0; i < plan.actions.length; i++) {
+      if (excludedActions.has(i)) continue;
+      const a = plan.actions[i];
+      let key: string;
+      if (a.type === "move") key = `→ Ordner „${a.targetFolder}"`;
+      else if (a.type === "move_trash") key = "→ Papierkorb";
+      else if (a.type === "move_spam") key = "→ Spam";
+      else if (a.type === "categorize") key = `→ Kategorie „${a.category}"`;
+      else if (a.type === "mark_read") key = "Als gelesen markieren";
+      else if (a.type === "create_contact_candidate") key = "Kontakt extrahieren";
+      else key = String((a as AiMailAction).type);
+      groups.set(key, (groups.get(key) ?? 0) + 1);
+    }
+    return Array.from(groups.entries()).map(([label, count]) => ({ label, count }));
+  }, [plan, excludedActions]);
+
+  const selectedCount = plan
+    ? plan.actions.length - excludedActions.size
+    : 0;
 
   return (
     <main className="min-h-screen p-6">
@@ -483,10 +535,12 @@ export default function AiAssistantPage() {
             {plan && planMeta?.kind === "plan" ? (
               <button
                 onClick={() => void executePlan()}
-                disabled={busy || plan.actions.length === 0}
+                disabled={busy || selectedCount === 0}
                 className="glass-btn-primary rounded-lg px-3 py-2 text-sm disabled:opacity-60"
               >
-                {busy && plan ? "Führe aus..." : "Ausführen"}
+                {busy && plan
+                  ? "Führe aus..."
+                  : `Ausführen (${selectedCount} Aktion${selectedCount !== 1 ? "en" : ""})`}
               </button>
             ) : null}
           </div>
@@ -625,22 +679,87 @@ export default function AiAssistantPage() {
                 Keine Aktionen vorgeschlagen.
               </p>
             ) : (
-              <ul className="mt-3 space-y-2 text-sm">
-                {actionPreview.map((a) => (
-                  <li
-                    key={a.index}
-                    className="rounded-lg glass px-3 py-2"
+              <>
+                {actionGroups.length > 0 ? (
+                  <div className="mt-3 rounded-lg glass px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide glass-text-tertiary">
+                      Geplante Aktionen ({selectedCount} von {plan.actions.length} ausgewählt)
+                    </p>
+                    <ul className="mt-1 space-y-0.5 text-sm glass-text-primary">
+                      {actionGroups.map((g) => (
+                        <li key={g.label}>
+                          • {g.count} Mail{g.count !== 1 ? "s" : ""} {g.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div className="mt-2 flex items-center gap-2 text-xs glass-text-tertiary">
+                  <button
+                    className="underline hover:no-underline"
+                    onClick={() => setExcludedActions(new Set())}
                   >
-                    <p>
-                      <span className="font-semibold">{a.type}</span> · {a.text}
-                    </p>
-                    <p className="text-xs glass-text-tertiary">
-                      mailId: {a.emailId} · confidence:{" "}
-                      {(a.confidence * 100).toFixed(0)}%
-                    </p>
-                  </li>
-                ))}
-              </ul>
+                    Alle auswählen
+                  </button>
+                  <span>·</span>
+                  <button
+                    className="underline hover:no-underline"
+                    onClick={() =>
+                      setExcludedActions(
+                        new Set(plan.actions.map((_, i) => i)),
+                      )
+                    }
+                  >
+                    Keine auswählen
+                  </button>
+                </div>
+
+                <ul className="mt-2 space-y-1.5 text-sm">
+                  {actionPreview.map((a) => {
+                    const excluded = excludedActions.has(a.index);
+                    return (
+                      <li
+                        key={a.index}
+                        className={`flex items-start gap-2 rounded-lg glass px-3 py-2 transition-opacity ${
+                          excluded ? "opacity-40" : ""
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!excluded}
+                          onChange={() => {
+                            setExcludedActions((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(a.index)) next.delete(a.index);
+                              else next.add(a.index);
+                              return next;
+                            });
+                          }}
+                          className="mt-1 h-4 w-4 shrink-0 rounded accent-blue-500"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium glass-text-primary">
+                            {a.subject}
+                            <span className="ml-1 font-normal text-xs glass-text-tertiary">
+                              von {a.fromName}
+                            </span>
+                          </p>
+                          <p className="text-xs glass-text-secondary">
+                            {a.fromFolder} → {a.targetLabel}
+                            <span className="ml-2 glass-text-tertiary">
+                              (Konfidenz: {(a.confidence * 100).toFixed(0)}%)
+                            </span>
+                            {a.date ? (
+                              <span className="ml-2 glass-text-tertiary">{a.date}</span>
+                            ) : null}
+                          </p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
             )}
           </section>
         ) : null}
