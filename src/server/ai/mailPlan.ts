@@ -10,64 +10,50 @@ import { z } from "zod";
  */
 
 export const aiMailActionSchema = z.discriminatedUnion("type", [
-  z
-    .object({
-      type: z.literal("categorize"),
-      emailId: z.string().min(1),
-      category: z.string().min(1),
-      reason: z.string().optional(),
-      confidence: z.number().min(0).max(1),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("move"),
-      emailId: z.string().min(1),
-      targetFolder: z.string().min(1),
-      reason: z.string().optional(),
-      confidence: z.number().min(0).max(1),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("move_trash"),
-      emailId: z.string().min(1),
-      reason: z.string().min(1),
-      confidence: z.number().min(0).max(1),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("move_spam"),
-      emailId: z.string().min(1),
-      reason: z.string().min(1),
-      confidence: z.number().min(0).max(1),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("mark_read"),
-      emailId: z.string().min(1),
-      reason: z.string().optional(),
-      confidence: z.number().min(0).max(1),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("create_contact_candidate"),
-      emailId: z.string().min(1),
-      reason: z.string().optional(),
-      confidence: z.number().min(0).max(1),
-    })
-    .strict(),
+  z.object({
+    type: z.literal("categorize"),
+    emailId: z.string().min(1),
+    category: z.string().min(1),
+    reason: z.string().optional(),
+    confidence: z.number().min(0).max(1),
+  }),
+  z.object({
+    type: z.literal("move"),
+    emailId: z.string().min(1),
+    targetFolder: z.string().min(1),
+    reason: z.string().optional(),
+    confidence: z.number().min(0).max(1),
+  }),
+  z.object({
+    type: z.literal("move_trash"),
+    emailId: z.string().min(1),
+    reason: z.string().min(1),
+    confidence: z.number().min(0).max(1),
+  }),
+  z.object({
+    type: z.literal("move_spam"),
+    emailId: z.string().min(1),
+    reason: z.string().min(1),
+    confidence: z.number().min(0).max(1),
+  }),
+  z.object({
+    type: z.literal("mark_read"),
+    emailId: z.string().min(1),
+    reason: z.string().optional(),
+    confidence: z.number().min(0).max(1),
+  }),
+  z.object({
+    type: z.literal("create_contact_candidate"),
+    emailId: z.string().min(1),
+    reason: z.string().optional(),
+    confidence: z.number().min(0).max(1),
+  }),
 ]);
 
-export const aiMailPlanSchema = z
-  .object({
-    summary: z.string(),
-    actions: z.array(aiMailActionSchema),
-  })
-  .strict();
+export const aiMailPlanSchema = z.object({
+  summary: z.string(),
+  actions: z.array(aiMailActionSchema),
+});
 
 export type AiMailAction = z.infer<typeof aiMailActionSchema>;
 export type AiMailPlan = z.infer<typeof aiMailPlanSchema>;
