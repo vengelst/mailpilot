@@ -38,7 +38,6 @@ async function pingOpenAi(apiKey: string): Promise<{ ok: true } | { ok: false; r
 
 async function pingAnthropic(apiKey: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
-    // Minimal valid messages call — Anthropic has no GET /models endpoint.
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -47,16 +46,21 @@ async function pingAnthropic(apiKey: string): Promise<{ ok: true } | { ok: false
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-sonnet-latest",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 1,
         messages: [{ role: "user", content: "ping" }],
       }),
     });
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, reason: "API-Key abgelehnt." };
+      return { ok: false, reason: "API-Key abgelehnt (401/403)." };
     }
     if (!res.ok) {
-      return { ok: false, reason: `Anthropic antwortete mit Status ${res.status}.` };
+      let detail = "";
+      try {
+        const body = await res.json() as { error?: { message?: string } };
+        detail = body?.error?.message ? `: ${body.error.message}` : "";
+      } catch { /* ignore */ }
+      return { ok: false, reason: `Anthropic Status ${res.status}${detail}` };
     }
     return { ok: true };
   } catch {
