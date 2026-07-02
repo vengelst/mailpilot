@@ -399,6 +399,7 @@ type Email = {
   aiCategory: string | null;
   aiPriority: string | null;
   actionRequired?: boolean;
+  labels?: string[];
   attachments: Attachment[];
 };
 
@@ -735,6 +736,30 @@ export function MailWorkspace() {
   const [mobileMovePanelOpen, setMobileMovePanelOpen] = useState(false);
   const [mobileNewFolderName, setMobileNewFolderName] = useState("");
   const [mobileNewFolderParentPath, setMobileNewFolderParentPath] = useState("");
+
+  // --- Label system ---
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [labelList, setLabelList] = useState<{ id: string; name: string; color: string | null; emailCount: number }[]>([]);
+  const [labelsExpanded, setLabelsExpanded] = useState(true);
+  const [labelDropdownOpen, setLabelDropdownOpen] = useState(false);
+  const [newLabelInline, setNewLabelInline] = useState("");
+
+  // --- Auto-Prompt (Feature 1) ---
+  const [checkedSenders] = useState(() => new Set<string>());
+  const [senderPromptVisible, setSenderPromptVisible] = useState(false);
+  const [senderPromptData, setSenderPromptData] = useState<{
+    email: string;
+    domain: string;
+    fromName: string;
+  } | null>(null);
+  const [senderPromptCategory, setSenderPromptCategory] = useState("Sonstiges");
+  const [senderPromptFolder, setSenderPromptFolder] = useState("");
+  const [senderPromptSaving, setSenderPromptSaving] = useState(false);
+
+  // --- Auto-move toast (Feature 2) ---
+  const [autoMoveToast, setAutoMoveToast] = useState<{ emailId: string; folder: string } | null>(null);
+  const autoMoveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const composeEditorRef = useRef<HTMLDivElement | null>(null);
   const mailBodyIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -1226,6 +1251,174 @@ export function MailWorkspace() {
       senderProfileToastTimerRef.current = null;
     }
     setSenderProfileToast(null);
+  }
+
+  // --- Label system helpers ---
+
+  async function loadLabels() {
+    try {
+      const res = await fetch("/api/labels");
+      if (!res.ok) return;
+      const data = await res.json();
+      setLabelList(data.labels ?? []);
+    } catch { /* ignore */ }
+  }
+
+  async function addLabelToEmail(emailId: string, label: string) {
+    try {
+      const res = await fetch(`/api/emails/${emailId}/labels`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const newLabels: string[] = data.labels ?? [];
+      setSelectedEmail((prev) =>
+        prev?.id === emailId ? { ...prev, labels: newLabels } : prev,
+      );
+      setEmails((prev) =>
+        prev.map((e) => (e.id === emailId ? { ...e, labels: newLabels } : e)),
+      );
+      void loadLabels();
+    } catch { /* ignore */ }
+  }
+
+  async function removeLabelFromEmail(emailId: string, label: string) {
+    try {
+      const res = await fetch(`/api/emails/${emailId}/labels`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const newLabels: string[] = data.labels ?? [];
+      setSelectedEmail((prev) =>
+        prev?.id === emailId ? { ...prev, labels: newLabels } : prev,
+      );
+      setEmails((prev) =>
+        prev.map((e) => (e.id === emailId ? { ...e, labels: newLabels } : e)),
+      );
+      void loadLabels();
+    } catch { /* ignore */ }
+  }
+
+  async function createAndAddLabel(emailId: string, labelName: string) {
+    try {
+      const res = await fetch("/api/labels", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: labelName, color: "#3b82f6" }),
+      });
+      if (!res.ok) return;
+      await addLabelToEmail(emailId, labelName);
+    } catch { /* ignore */ }
+  }
+
+  async function loadEmailsByLabel(label: string) {
+    setSelectedLabel(label);
+    setSelectedEmail(null);
+    setIsLoadingEmails(true);
+    try {
+      const res = await fetch(`/api/emails/by-label?label=${encodeURIComponent(label)}&limit=${mailScrollBatchSize}`);
+      if (!res.ok) {
+        setUiError("E-Mails für Label konnten nicht geladen werden.");
+        setEmails([]);
+        return;
+      }
+      const data = await res.json();
+      setEmails(data.emails ?? []);
+      const pageInfo = data.pageInfo;
+      emailsNextCursorRef.current = pageInfo?.nextCursor ?? null;
+      emailsHasMoreRef.current = pageInfo?.hasMore ?? false;
+      setEmailsHasMore(pageInfo?.hasMore ?? false);
+    } catch {
+      setUiError("Label-Ansicht konnte nicht geladen werden.");
+    } finally {
+      setIsLoadingEmails(false);
+    }
+  }
+
+  // --- Auto-Prompt (Feature 1) helpers ---
+
+  async function checkSenderOnOpen(email: Email) {
+    if (!email.fromEmail) return;
+    if (checkedSenders.has(email.fromEmail)) return;
+    checkedSenders.add(email.fromEmail);
+    try {
+      const res = await fetch(
+        `/api/sender-profiles/check-sender?email=${encodeURIComponent(email.fromEmail)}`,
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.matched) return;
+      const domain = email.fromEmail.split("@")[1] ?? "";
+      setSenderPromptData({
+        email: email.fromEmail,
+        domain,
+        fromName: email.fromName ?? "",
+      });
+      setSenderPromptCategory("Sonstiges");
+      setSenderPromptFolder("");
+      setSenderPromptVisible(true);
+    } catch { /* ignore */ }
+  }
+
+  async function handleSenderPromptSave() {
+    if (!senderPromptData) return;
+    setSenderPromptSaving(true);
+    try {
+      const suggestRes = await fetch("/api/sender-profiles/suggest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: senderPromptData.email, fromName: senderPromptData.fromName }),
+      });
+      const suggestion = suggestRes.ok ? await suggestRes.json() : null;
+
+      await fetch("/api/sender-profiles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          profileName: suggestion?.profileName ?? (senderPromptData.fromName || senderPromptData.email.split("@")[0]),
+          patterns: suggestion?.patterns ?? [senderPromptData.domain || senderPromptData.email],
+          category: senderPromptCategory,
+          targetFolder: senderPromptFolder || "INBOX",
+        }),
+      });
+      setUiInfo(`Absender-Profil für ${senderPromptData.domain || senderPromptData.email} erstellt.`);
+    } catch {
+      setUiError("Absender-Profil konnte nicht erstellt werden.");
+    } finally {
+      setSenderPromptSaving(false);
+      setSenderPromptVisible(false);
+      setSenderPromptData(null);
+    }
+  }
+
+  function handleSenderPromptSkip() {
+    setSenderPromptVisible(false);
+    setSenderPromptData(null);
+  }
+
+  async function handleSenderPromptIgnore() {
+    if (!senderPromptData) return;
+    setSenderPromptSaving(true);
+    try {
+      await fetch("/api/sender-profiles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          profileName: senderPromptData.domain || senderPromptData.email,
+          patterns: [senderPromptData.domain || senderPromptData.email],
+          category: "ignore",
+          targetFolder: "",
+        }),
+      });
+    } catch { /* ignore */ }
+    setSenderPromptSaving(false);
+    setSenderPromptVisible(false);
+    setSenderPromptData(null);
   }
 
   function toggleSelected(id: string) {
@@ -1747,7 +1940,23 @@ export function MailWorkspace() {
       return;
     }
     if (emailData && !(emailData.flags ?? []).includes("\\Seen")) {
-      fetch(`/api/emails/${id}/mark-read`, { method: "POST" }).catch(() => {});
+      fetch(`/api/emails/${id}/mark-read`, { method: "POST" })
+        .then(async (res) => {
+          if (!res.ok) return;
+          const mrData = await res.json().catch(() => ({}));
+          if (mrData.movedTo) {
+            if (autoMoveToastTimerRef.current) clearTimeout(autoMoveToastTimerRef.current);
+            setAutoMoveToast({ emailId: id, folder: mrData.movedTo });
+            autoMoveToastTimerRef.current = setTimeout(() => {
+              setAutoMoveToast(null);
+              autoMoveToastTimerRef.current = null;
+            }, 5000);
+            setEmails((prev) => prev.filter((e) => e.id !== id));
+            setSelectedEmail((prev) => (prev?.id === id ? null : prev));
+            void reloadFolders();
+          }
+        })
+        .catch(() => {});
       setSelectedEmail((prev: Email | null) =>
         prev?.id === id ? { ...prev, flags: [...(prev.flags ?? []), "\\Seen"] } : prev,
       );
@@ -1756,6 +1965,9 @@ export function MailWorkspace() {
           e.id === id ? { ...e, flags: [...(e.flags ?? []), "\\Seen"] } : e,
         ),
       );
+    }
+    if (emailData) {
+      void checkSenderOnOpen(emailData);
     }
   }
 
@@ -2432,6 +2644,7 @@ export function MailWorkspace() {
       void loadContactCandidates();
       void loadSignatureSettings();
       void loadAutomationSettings();
+      void loadLabels();
       void fetch("/api/compose/send-due", { method: "POST" });
     }, 0);
     return () => clearTimeout(timer);
@@ -2553,6 +2766,7 @@ export function MailWorkspace() {
   }, [selectedAccountId]);
 
   useEffect(() => {
+    if (selectedLabel) return;
     const timer = setTimeout(() => {
       void loadEmails();
     }, 0);
@@ -2568,6 +2782,7 @@ export function MailWorkspace() {
     tab,
     sort,
     mailScrollBatchSize,
+    selectedLabel,
   ]);
 
   useEffect(() => {
@@ -3146,6 +3361,13 @@ export function MailWorkspace() {
           <span className="md:hidden">Abs.</span>
         </a>
         <a
+          href="/labels"
+          title="Labels verwalten"
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm"
+        >
+          Labels
+        </a>
+        <a
           href="/ai-assistant"
           title="KI-Assistent"
           className="glass-btn rounded-lg px-3 py-1.5 text-sm"
@@ -3277,6 +3499,24 @@ export function MailWorkspace() {
             onClick={() => {
               if (senderProfileToastTimerRef.current) clearTimeout(senderProfileToastTimerRef.current);
               setSenderProfileToast(null);
+            }}
+            className="glass-btn px-1.5 py-0.5 rounded text-xs glass-text-muted"
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
+      {autoMoveToast ? (
+        <div className="glass-info flex flex-wrap items-center gap-2 px-4 py-2 text-sm" role="status" aria-live="polite">
+          <span className="glass-text-secondary">
+            E-Mail automatisch verschoben nach{" "}
+            <strong className="glass-text-primary">{autoMoveToast.folder}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (autoMoveToastTimerRef.current) clearTimeout(autoMoveToastTimerRef.current);
+              setAutoMoveToast(null);
             }}
             className="glass-btn px-1.5 py-0.5 rounded text-xs glass-text-muted"
           >
@@ -3718,6 +3958,7 @@ export function MailWorkspace() {
                             onDrop={handleFolderDrop}
                             onFolderDrop={handleFolderMoveByDrag}
                             onSelect={(path) => {
+                              setSelectedLabel(null);
                               setSelectedFolderPath(path);
                               setSelectedEmail(null);
                               setBodyContent(null);
@@ -3731,6 +3972,58 @@ export function MailWorkspace() {
                   </li>
                 </ul>
               )}
+              {/* --- Labels (virtuelle Ordner) --- */}
+              {labelList.length > 0 || !isAllAccounts ? (
+                <div className="mt-2 border-t glass-divider pt-2">
+                  <button
+                    onClick={() => setLabelsExpanded((v) => !v)}
+                    className="flex w-full items-center gap-1 px-2 py-1 text-left text-sm font-semibold glass-text-primary hover:bg-white/30"
+                  >
+                    <span className="flex h-6 w-5 shrink-0 items-center justify-center text-[10px] glass-text-muted">
+                      {labelsExpanded ? "▼" : "▶"}
+                    </span>
+                    <span className="truncate">Labels</span>
+                  </button>
+                  {labelsExpanded ? (
+                    <ul className="space-y-0.5 pl-1">
+                      {labelList.map((label) => (
+                        <li key={label.id}>
+                          <button
+                            onClick={() => {
+                              void loadEmailsByLabel(label.name);
+                              setMobilePane("middle");
+                            }}
+                            className={`flex w-full items-center gap-2 rounded-lg px-3 py-1 text-left text-sm transition-colors ${
+                              selectedLabel === label.name
+                                ? "glass-active"
+                                : "glass-text-secondary hover:bg-white/30"
+                            }`}
+                          >
+                            <span
+                              className="h-3 w-3 shrink-0 rounded-full"
+                              style={{ backgroundColor: label.color ?? "#6b7280" }}
+                            />
+                            <span className="min-w-0 flex-1 truncate">{label.name}</span>
+                            <span className={`shrink-0 text-xs tabular-nums ${
+                              selectedLabel === label.name ? "text-white/80" : "glass-text-muted"
+                            }`}>
+                              {label.emailCount > 0 ? label.emailCount : ""}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                      <li>
+                        <a
+                          href="/labels"
+                          className="flex items-center gap-2 rounded-lg px-3 py-1 text-left text-xs glass-text-muted hover:bg-white/30"
+                        >
+                          Labels verwalten
+                        </a>
+                      </li>
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </aside>
         ) : null}
@@ -4511,6 +4804,154 @@ export function MailWorkspace() {
                   </p>
                 ) : null}
               </div>
+
+              {/* --- Label-Chips --- */}
+              <div className="flex flex-wrap items-center gap-1.5 border-b glass-divider px-4 py-2">
+                {(selectedEmail.labels ?? []).map((label) => {
+                  const def = labelList.find((l) => l.name === label);
+                  return (
+                    <span
+                      key={label}
+                      className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
+                      style={{ backgroundColor: def?.color ?? "#6b7280" }}
+                    >
+                      {label}
+                      <button
+                        type="button"
+                        onClick={() => void removeLabelFromEmail(selectedEmail.id, label)}
+                        className="ml-0.5 hover:opacity-70"
+                        aria-label={`Label ${label} entfernen`}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  );
+                })}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setLabelDropdownOpen((v) => !v)}
+                    className="glass-btn rounded-full px-2 py-0.5 text-xs"
+                  >
+                    + Label
+                  </button>
+                  {labelDropdownOpen ? (
+                    <div className="glass-solid absolute left-0 z-30 mt-1 w-48 rounded-xl py-1 text-sm shadow-lg">
+                      {labelList.map((label) => (
+                        <button
+                          key={label.id}
+                          type="button"
+                          onClick={() => {
+                            void addLabelToEmail(selectedEmail.id, label.name);
+                            setLabelDropdownOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-white/30 rounded-lg"
+                        >
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full"
+                            style={{ backgroundColor: label.color ?? "#6b7280" }}
+                          />
+                          <span className="truncate">{label.name}</span>
+                        </button>
+                      ))}
+                      <div className="border-t glass-divider mt-1 pt-1 px-2">
+                        <div className="flex gap-1">
+                          <input
+                            value={newLabelInline}
+                            onChange={(e) => setNewLabelInline(e.target.value)}
+                            placeholder="Neues Label..."
+                            className="glass-input flex-1 rounded-lg px-2 py-1 text-xs"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && newLabelInline.trim()) {
+                                void createAndAddLabel(selectedEmail.id, newLabelInline.trim());
+                                setNewLabelInline("");
+                                setLabelDropdownOpen(false);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (newLabelInline.trim()) {
+                                void createAndAddLabel(selectedEmail.id, newLabelInline.trim());
+                                setNewLabelInline("");
+                                setLabelDropdownOpen(false);
+                              }
+                            }}
+                            className="glass-btn rounded-lg px-2 py-1 text-xs"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* --- Auto-Prompt: Unbekannter Absender (Feature 1) --- */}
+              {senderPromptVisible && senderPromptData ? (
+                <div className="border-b glass-divider px-4 py-3 glass-info">
+                  <p className="text-sm font-medium glass-text-primary">
+                    Absender &quot;{senderPromptData.email}&quot; noch nicht klassifiziert
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="block text-xs glass-text-muted mb-0.5">Kategorie</label>
+                      <select
+                        value={senderPromptCategory}
+                        onChange={(e) => setSenderPromptCategory(e.target.value)}
+                        className="glass-select rounded-lg px-2 py-1 text-sm"
+                      >
+                        <option value="Kunde">Kunde</option>
+                        <option value="Lieferant">Lieferant</option>
+                        <option value="Subunternehmer">Subunternehmer</option>
+                        <option value="Privat">Privat</option>
+                        <option value="Werbung">Werbung</option>
+                        <option value="Sonstiges">Sonstiges</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs glass-text-muted mb-0.5">Zielordner</label>
+                      <select
+                        value={senderPromptFolder}
+                        onChange={(e) => setSenderPromptFolder(e.target.value)}
+                        className="glass-select rounded-lg px-2 py-1 text-sm"
+                      >
+                        <option value="">— Ordner wählen —</option>
+                        {folders.map((f) => (
+                          <option key={f.path} value={f.path}>{f.path}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void handleSenderPromptSave()}
+                        disabled={senderPromptSaving}
+                        className="glass-btn-primary rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50"
+                      >
+                        {senderPromptSaving ? "..." : "Profil speichern"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSenderPromptSkip}
+                        className="glass-btn rounded-lg px-3 py-1 text-xs"
+                      >
+                        Überspringen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSenderPromptIgnore()}
+                        disabled={senderPromptSaving}
+                        className="glass-btn rounded-lg px-3 py-1 text-xs glass-text-muted disabled:opacity-50"
+                      >
+                        Nie wieder fragen
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {isLoadingDetail ? (
                 <p className="px-4 py-2 text-sm glass-text-secondary">Lade Detail...</p>

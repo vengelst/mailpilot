@@ -1,8 +1,10 @@
 import { getSessionFromCookies } from "@/server/auth/session";
 import { fail, ok } from "@/lib/http";
 import { markEmailSeen } from "@/server/imap/imapService";
+import { moveIndexedEmail } from "@/server/imap/imapService";
 import { prisma } from "@/server/db/prisma";
 import { writeAuditLog } from "@/server/audit/auditLog";
+import { matchesSenderProfile } from "@/server/rules/senderMatcher";
 
 export async function POST(
   _req: Request,
@@ -34,6 +36,49 @@ export async function POST(
       beforeJson: { flags: email.flags },
       afterJson: { flags },
     });
+
+    if (email.folderPath === "INBOX" && !email.autoMoveBlocked) {
+      const profiles = await prisma.senderProfile.findMany({
+        where: {
+          userId: session.userId,
+          isActive: true,
+          category: { not: "ignore" },
+        },
+      });
+
+      const matchedProfile = profiles.find(
+        (p) =>
+          email.fromEmail &&
+          matchesSenderProfile(email.fromEmail, p.patterns) &&
+          p.targetFolder &&
+          p.targetFolder !== "INBOX",
+      );
+
+      if (matchedProfile && matchedProfile.targetFolder) {
+        try {
+          await moveIndexedEmail(id, session.userId, matchedProfile.targetFolder);
+
+          const mergedLabels =
+            matchedProfile.autoLabels.length > 0
+              ? [...new Set([...(email.labels || []), ...matchedProfile.autoLabels])]
+              : email.labels || [];
+
+          await prisma.emailIndex.update({
+            where: { id },
+            data: {
+              folderPath: matchedProfile.targetFolder,
+              ...(matchedProfile.autoLabels.length > 0
+                ? { labels: mergedLabels }
+                : {}),
+            },
+          });
+
+          return ok({ ok: true, movedTo: matchedProfile.targetFolder });
+        } catch {
+          return ok({ ok: true });
+        }
+      }
+    }
 
     return ok({ ok: true });
   } catch (error) {

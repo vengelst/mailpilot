@@ -79,6 +79,7 @@ model User {
   aiSettings         AiSettings?
   signatureSettings  SignatureSettings?
   senderProfiles     SenderProfile[]
+  emailLabels        EmailLabel[]
 }
 
 model SignatureSettings {
@@ -214,6 +215,8 @@ model EmailIndex {
   bodyHtml            String?
   bodyPlain           String?
   bodyFetchedAt       DateTime?
+  labels              String[]           @default([])
+  autoMoveBlocked     Boolean            @default(false)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   account             MailAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -231,6 +234,7 @@ model EmailIndex {
   @@index([accountId, hasAttachments])
   @@index([accountId, actionRequired])
   @@index([accountId, localFlag])
+  @@index([accountId, labels])
 }
 
 model EmailAttachment {
@@ -372,10 +376,25 @@ model SenderProfile {
 
   isActive     Boolean      @default(true)
   emailCount   Int          @default(0)
+  autoLabels   String[]     @default([])
 
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
   @@index([userId])
   @@index([userId, isActive])
+}
+
+model EmailLabel {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String?
+  icon      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
 }
