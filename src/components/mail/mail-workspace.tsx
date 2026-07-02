@@ -3713,7 +3713,7 @@ export function MailWorkspace() {
                           : "border-2 border-transparent hover:bg-white/40"
                       }`}
                     >
-                      <div className="mt-2 flex shrink-0 flex-col items-center gap-1 px-1" onClick={(e) => e.stopPropagation()}>
+                      <div className="mt-2 flex shrink-0 flex-col items-center gap-3 px-1" onClick={(e) => e.stopPropagation()}>
                         <label className="flex cursor-pointer items-center">
                           <input
                             type="checkbox"
