@@ -592,7 +592,7 @@ export function MailWorkspace() {
     | null
   >(null);
   const [mobilePane, setMobilePane] = useState<"left" | "middle" | "right">("middle");
-  const [mobileDrawerDragX, setMobileDrawerDragX] = useState(0);
+  const [, setMobileDrawerDragX] = useState(0);
   const [leftSwipeAction, setLeftSwipeAction] = useState<MobileSwipeAction>("trash");
   const [rightSwipeAction, setRightSwipeAction] = useState<MobileSwipeAction>("mark_read");
   const [mailSwipeOffsets, setMailSwipeOffsets] = useState<Record<string, number>>({});
@@ -735,12 +735,13 @@ export function MailWorkspace() {
     [folders, selectedFolderPath],
   );
   const latestAutomationRun = automationRuns[0] ?? null;
+  const latestRunStartedAt = latestAutomationRun?.startedAt ?? null;
   const nextScheduledRunAt = useMemo(() => {
-    if (!latestAutomationRun?.startedAt) return null;
-    const base = new Date(latestAutomationRun.startedAt).getTime();
+    if (!latestRunStartedAt) return null;
+    const base = new Date(latestRunStartedAt).getTime();
     if (!Number.isFinite(base)) return null;
     return new Date(base + Math.max(5, Math.round(newMailCheckIntervalMinutes)) * 60 * 1000).toISOString();
-  }, [latestAutomationRun?.startedAt, newMailCheckIntervalMinutes]);
+  }, [latestRunStartedAt, newMailCheckIntervalMinutes]);
   // Detect Trash/Spam locally so we can show the "Leeren" button — the server
   // does its own classification before actually purging.
   const folderEmptyKind: "trash" | "spam" | null = useMemo(() => {
@@ -1414,7 +1415,9 @@ export function MailWorkspace() {
     }
   }
 
-  loadMoreEmailsRef.current = loadMoreEmails;
+  useEffect(() => {
+    loadMoreEmailsRef.current = loadMoreEmails;
+  });
 
   useEffect(() => {
     pendingSwipeTrashUndosRef.current = pendingSwipeTrashUndos;
@@ -2235,6 +2238,7 @@ export function MailWorkspace() {
   useEffect(() => {
     if (!automationDashboardOpen) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAutomationLoading(true);
     void (async () => {
       try {
@@ -2246,7 +2250,6 @@ export function MailWorkspace() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [automationDashboardOpen]);
 
   useEffect(() => {
@@ -2265,7 +2268,6 @@ export function MailWorkspace() {
         automationRefreshRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [automationDashboardOpen]);
 
   useEffect(() => {
@@ -2304,6 +2306,7 @@ export function MailWorkspace() {
   }, [isBodyMaximized]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isBodyMaximized) setMaximizedBodyMenuOpen(false);
   }, [isBodyMaximized]);
 
@@ -2384,6 +2387,7 @@ export function MailWorkspace() {
 
   useEffect(() => {
     if (!rightDrawerEnabled && mobilePane === "right") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMobilePane("middle");
     }
     if (!selectedEmail) setMobileMovePanelOpen(false);
@@ -2391,11 +2395,13 @@ export function MailWorkspace() {
   }, [selectedEmail, mobilePane, rightDrawerEnabled]);
 
   useEffect(() => {
+    const feedbackTimeouts = swipeFeedbackTimeoutsRef.current;
+    const pendingUndos = pendingSwipeTrashUndosRef.current;
     return () => {
-      for (const timeoutId of Object.values(swipeFeedbackTimeoutsRef.current)) {
+      for (const timeoutId of Object.values(feedbackTimeouts)) {
         if (typeof timeoutId === "number") window.clearTimeout(timeoutId);
       }
-      for (const pending of pendingSwipeTrashUndosRef.current) {
+      for (const pending of pendingUndos) {
         window.clearTimeout(pending.timeoutId);
       }
     };
@@ -2625,6 +2631,7 @@ export function MailWorkspace() {
   useEffect(() => {
     try {
       const v = window.localStorage.getItem(MOBILE_MAIN_HEADER_LS_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (v === "0") setMobileMainHeaderExpanded(false);
       if (v === "1") setMobileMainHeaderExpanded(true);
       const folderCountMode = window.localStorage.getItem(FOLDER_COUNT_MODE_LS_KEY);
@@ -3095,7 +3102,7 @@ export function MailWorkspace() {
                   : ""}
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
-                Manuell: "Check jetzt" startet sofort denselben Delta-Sync.
+                Manuell: &quot;Check jetzt&quot; startet sofort denselben Delta-Sync.
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
                 Nächster Lauf: {formatDateTime(nextScheduledRunAt)}

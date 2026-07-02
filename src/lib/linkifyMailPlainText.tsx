@@ -31,7 +31,6 @@ export function linkifyMailPlainText(text: string): ReactNode[] {
     }
     const bracketed = m[1];
     const bare = m[2];
-    const rawToken = bracketed || bare;
     const normalized = bracketed ? bracketed : trimTrailingJunkFromBareUrl(bare);
     const href = safeHttpHref(normalized);
     if (href) {
