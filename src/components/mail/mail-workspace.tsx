@@ -3885,7 +3885,7 @@ export function MailWorkspace() {
                           >
                             {sender}
                           </span>
-                          <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums glass-text-muted">
+                          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums glass-text-secondary">
                             {formatDateTimeShort(email.date ?? email.createdAt)}
                           </span>
                             </span>
@@ -4045,7 +4045,7 @@ export function MailWorkspace() {
                 </h2>
                 <div className="shrink-0 text-right">
                   <p className="text-[10px] font-medium glass-text-tertiary">Eingang</p>
-                  <p className="text-[11px] tabular-nums glass-text-secondary">
+                  <p className="text-sm tabular-nums font-medium glass-text-primary">
                     {formatDateTimeShort(selectedEmail.date ?? selectedEmail.createdAt)}
                   </p>
                 </div>
