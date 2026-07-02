@@ -530,7 +530,15 @@ export default function AiAssistantPage() {
               disabled={busy || !prompt.trim()}
               className="glass-btn-dark rounded-lg px-3 py-2 text-sm disabled:opacity-60"
             >
-              {busy && !plan ? "Erzeuge Plan..." : "Vorschau erzeugen"}
+              {busy && !plan ? (
+                <span className="inline-flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  KI analysiert…
+                </span>
+              ) : "Vorschau erzeugen"}
             </button>
             {plan && planMeta?.kind === "plan" ? (
               <button
@@ -538,9 +546,15 @@ export default function AiAssistantPage() {
                 disabled={busy || selectedCount === 0}
                 className="glass-btn-primary rounded-lg px-3 py-2 text-sm disabled:opacity-60"
               >
-                {busy && plan
-                  ? "Führe aus..."
-                  : `Ausführen (${selectedCount} Aktion${selectedCount !== 1 ? "en" : ""})`}
+                {busy && plan ? (
+                  <span className="inline-flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Führe aus…
+                  </span>
+                ) : `Ausführen (${selectedCount} Aktion${selectedCount !== 1 ? "en" : ""})`}
               </button>
             ) : null}
           </div>

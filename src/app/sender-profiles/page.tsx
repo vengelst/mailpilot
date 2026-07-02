@@ -48,6 +48,7 @@ export default function SenderProfilesPage() {
   const [error, setError] = useState("");
 
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [applyProgress, setApplyProgress] = useState<string>("");
   const [applyResult, setApplyResult] = useState<{
     id: string;
     moved: number;
@@ -214,10 +215,12 @@ export default function SenderProfilesPage() {
       return;
     setApplyingId(id);
     setApplyResult(null);
+    setApplyProgress("Suche passende E-Mails…");
     try {
       const res = await fetch(`/api/sender-profiles/${id}/apply`, {
         method: "POST",
       });
+      setApplyProgress("Verschiebe E-Mails…");
       const data = await res.json();
       if (res.ok) {
         setApplyResult({ id, moved: data.moved ?? 0, errors: data.errors ?? 0 });
@@ -229,6 +232,7 @@ export default function SenderProfilesPage() {
       setError("Anwenden fehlgeschlagen");
     } finally {
       setApplyingId(null);
+      setApplyProgress("");
     }
   }
 
@@ -533,9 +537,15 @@ export default function SenderProfilesPage() {
                     disabled={applyingId === profile.id}
                     className="glass-btn px-2 py-1 rounded-lg text-xs bg-green-600/20 hover:bg-green-600/30 text-green-300 disabled:opacity-50"
                   >
-                    {applyingId === profile.id
-                      ? "Wende an…"
-                      : "Rückwirkend"}
+                    {applyingId === profile.id ? (
+                      <span className="inline-flex items-center gap-1">
+                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Verschiebe…
+                      </span>
+                    ) : "Rückwirkend"}
                   </button>
                   <button
                     onClick={() => handleDelete(profile.id)}
@@ -545,9 +555,18 @@ export default function SenderProfilesPage() {
                   </button>
                 </div>
               </div>
-              {applyResult?.id === profile.id && (
+              {applyingId === profile.id && applyProgress && (
+                <div className="mt-2 text-xs glass-text-secondary bg-blue-600/10 rounded-lg px-3 py-2 flex items-center gap-2">
+                  <svg className="animate-spin h-3 w-3 text-blue-400" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  {applyProgress}
+                </div>
+              )}
+              {applyResult?.id === profile.id && !applyingId && (
                 <div className="mt-2 text-xs glass-text-secondary bg-green-600/10 rounded-lg px-3 py-2">
-                  {applyResult.moved} E-Mail{applyResult.moved !== 1 ? "s" : ""}{" "}
+                  ✓ {applyResult.moved} E-Mail{applyResult.moved !== 1 ? "s" : ""}{" "}
                   verschoben
                   {applyResult.errors > 0 && (
                     <span className="text-red-400">
