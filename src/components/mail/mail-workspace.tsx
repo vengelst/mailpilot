@@ -636,6 +636,7 @@ export function MailWorkspace() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [emptyFolderModalOpen, setEmptyFolderModalOpen] = useState(false);
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
+  const [attachmentPreviewOpen, setAttachmentPreviewOpen] = useState<Set<string>>(new Set());
   const dragExpandTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [emptyConfirmText, setEmptyConfirmText] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -1539,6 +1540,7 @@ export function MailWorkspace() {
     const requestId = ++activeLoadEmailRequestIdRef.current;
     setIsLoadingDetail(true);
     setEmailDetailMenuOpen(false);
+    setAttachmentPreviewOpen(new Set());
     setBodyContent(null);
     setBodyError("");
     setBodyMode("html");
@@ -4313,6 +4315,19 @@ export function MailWorkspace() {
                                 ) : null}
                               </div>
                               <div className="flex flex-wrap gap-1">
+                                {/^(image\/|application\/pdf)/.test(attachment.mimeType || "") && (
+                                  <button
+                                    onClick={() => setAttachmentPreviewOpen((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(attachment.id)) next.delete(attachment.id);
+                                      else next.add(attachment.id);
+                                      return next;
+                                    })}
+                                    className="glass-btn rounded-lg px-2 py-1 text-xs"
+                                  >
+                                    {attachmentPreviewOpen.has(attachment.id) ? "Vorschau schließen" : "Vorschau"}
+                                  </button>
+                                )}
                                 <a
                                   href={previewUrl}
                                   target="_blank"
@@ -4346,6 +4361,23 @@ export function MailWorkspace() {
                                 </button>
                               </div>
                             </div>
+                            {attachmentPreviewOpen.has(attachment.id) && (
+                              <div className="mt-2 overflow-hidden rounded-lg border glass-divider">
+                                {attachment.mimeType?.startsWith("image/") ? (
+                                  <img
+                                    src={previewUrl}
+                                    alt={getAttachmentDisplayName(attachment)}
+                                    className="max-h-[400px] w-full object-contain bg-gray-50"
+                                  />
+                                ) : attachment.mimeType === "application/pdf" ? (
+                                  <iframe
+                                    src={previewUrl}
+                                    title={getAttachmentDisplayName(attachment)}
+                                    className="h-[500px] w-full"
+                                  />
+                                ) : null}
+                              </div>
+                            )}
 
                             <div className="mt-2 flex flex-wrap gap-2 border-t border-gray-100 pt-2">
                               <select
