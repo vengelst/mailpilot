@@ -43,6 +43,11 @@ const sections = [
     description: "Eigene Regeln für automatische Sortierung.",
   },
   {
+    href: "/sender-profiles",
+    title: "Absender-Profile",
+    description: "Absender klassifizieren und automatisch in Ordner sortieren.",
+  },
+  {
     href: "/blocklist",
     title: "Blockliste",
     description: "Absender und Domains blockieren.",

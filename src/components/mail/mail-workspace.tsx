@@ -616,6 +616,13 @@ export function MailWorkspace() {
   const [query, setQuery] = useState("");
   const [uiError, setUiError] = useState("");
   const [uiInfo, setUiInfo] = useState("");
+  const [senderProfileToast, setSenderProfileToast] = useState<{
+    fromEmail: string;
+    fromName: string;
+    targetFolder: string;
+    emailId: string;
+  } | null>(null);
+  const senderProfileToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLoadingEmails, setIsLoadingEmails] = useState(false);
   const [isLoadingMoreEmails, setIsLoadingMoreEmails] = useState(false);
   const [emailsHasMore, setEmailsHasMore] = useState(false);
@@ -1107,7 +1114,88 @@ export function MailWorkspace() {
     setDragOverFolderPath(null);
     const emailId = e.dataTransfer.getData("text/x-mailpilot-email-id");
     if (!emailId) return;
+    const droppedEmail = emails.find((em) => em.id === emailId);
     void runActionForEmail(emailId, `/api/emails/${emailId}/move`, { targetFolder: targetPath });
+    if (droppedEmail?.fromEmail) {
+      void checkSenderProfileAfterMove(
+        droppedEmail.fromEmail,
+        droppedEmail.fromName ?? "",
+        targetPath,
+        emailId,
+      );
+    }
+  }
+
+  async function checkSenderProfileAfterMove(
+    fromEmail: string,
+    fromName: string,
+    targetFolder: string,
+    emailId: string,
+  ) {
+    try {
+      const res = await fetch("/api/sender-profiles/match", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: fromEmail }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.profile) return;
+      if (senderProfileToastTimerRef.current) {
+        clearTimeout(senderProfileToastTimerRef.current);
+      }
+      setSenderProfileToast({ fromEmail, fromName, targetFolder, emailId });
+      senderProfileToastTimerRef.current = setTimeout(() => {
+        setSenderProfileToast(null);
+        senderProfileToastTimerRef.current = null;
+      }, 8000);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleRememberSenderProfile() {
+    if (!senderProfileToast) return;
+    const { fromEmail, fromName, targetFolder } = senderProfileToast;
+    try {
+      const suggestRes = await fetch("/api/sender-profiles/suggest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: fromEmail, fromName }),
+      });
+      const suggestion = suggestRes.ok ? await suggestRes.json() : null;
+
+      const folderLower = targetFolder.toLowerCase();
+      let cat = "Sonstiges";
+      const catMap: Record<string, string> = {
+        kunde: "Kunde", kunden: "Kunde", lieferant: "Lieferant", lieferanten: "Lieferant",
+        subunternehmer: "Subunternehmer", sub: "Subunternehmer", privat: "Privat",
+        werbung: "Werbung", newsletter: "Werbung",
+      };
+      for (const [kw, c] of Object.entries(catMap)) {
+        if (folderLower.includes(kw)) { cat = c; break; }
+      }
+
+      await fetch("/api/sender-profiles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          profileName: suggestion?.profileName ?? (fromName || fromEmail.split("@")[0]),
+          patterns: suggestion?.patterns ?? [fromEmail.split("@")[1] ?? fromEmail],
+          category: cat,
+          targetFolder,
+        }),
+      });
+
+      setUiInfo(`Absender-Profil für ${suggestion?.profileName ?? fromEmail} erstellt.`);
+    } catch {
+      setUiError("Absender-Profil konnte nicht erstellt werden.");
+    }
+    if (senderProfileToastTimerRef.current) {
+      clearTimeout(senderProfileToastTimerRef.current);
+      senderProfileToastTimerRef.current = null;
+    }
+    setSenderProfileToast(null);
   }
 
   function toggleSelected(id: string) {
@@ -3002,6 +3090,14 @@ export function MailWorkspace() {
           <span className="md:hidden">Dupl.</span>
         </a>
         <a
+          href="/sender-profiles"
+          title="Absender-Profile"
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm"
+        >
+          <span className="hidden md:inline">Absender</span>
+          <span className="md:hidden">Abs.</span>
+        </a>
+        <a
           href="/ai-assistant"
           title="KI-Assistent"
           className="glass-btn rounded-lg px-3 py-1.5 text-sm"
@@ -3114,6 +3210,31 @@ export function MailWorkspace() {
         <p className="glass-info px-4 py-2 text-sm">
           {uiInfo}
         </p>
+      ) : null}
+      {senderProfileToast ? (
+        <div className="glass-info flex flex-wrap items-center gap-2 px-4 py-2 text-sm" role="status" aria-live="polite">
+          <span className="glass-text-secondary">
+            E-Mail von <strong className="glass-text-primary">{senderProfileToast.fromEmail}</strong> nach{" "}
+            <strong className="glass-text-primary">{senderProfileToast.targetFolder}</strong> verschoben.
+          </span>
+          <button
+            type="button"
+            onClick={() => void handleRememberSenderProfile()}
+            className="glass-btn rounded-lg px-3 py-1 text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-medium"
+          >
+            Regel merken
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (senderProfileToastTimerRef.current) clearTimeout(senderProfileToastTimerRef.current);
+              setSenderProfileToast(null);
+            }}
+            className="glass-btn px-1.5 py-0.5 rounded text-xs glass-text-muted"
+          >
+            ✕
+          </button>
+        </div>
       ) : null}
       {pendingSwipeTrashUndos.length > 0 ? (
         <div className="glass-info flex flex-wrap items-center gap-2 px-4 py-2 text-sm" role="status" aria-live="polite">
@@ -3460,6 +3581,13 @@ export function MailWorkspace() {
                   title="Einstellungen"
                 >
                   Settings
+                </a>
+                <a
+                  href="/sender-profiles"
+                  className="glass-btn rounded-lg px-2 py-1 text-center text-xs"
+                  title="Absender-Profile"
+                >
+                  Absender
                 </a>
                 <a
                   href="/ai-assistant"

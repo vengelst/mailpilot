@@ -78,6 +78,7 @@ model User {
   auditLogs          AuditLog[]
   aiSettings         AiSettings?
   signatureSettings  SignatureSettings?
+  senderProfiles     SenderProfile[]
 }
 
 model SignatureSettings {
@@ -131,6 +132,7 @@ model MailAccount {
   emails                EmailIndex[]
   drafts                MailDraft[]
   auditLogs             AuditLog[]
+  senderProfiles        SenderProfile[]
 }
 
 model MailDraft {
@@ -204,6 +206,8 @@ model EmailIndex {
   aiRecommendedAction String?
   aiConfidence        Float?
   actionRequired      Boolean            @default(false)
+  autoClassified      Boolean            @default(false)
+  suggestedFolder     String?
   // Body cache — populated lazily by `loadMessageBody` when the user opens
   // a mail or the AI needs the content. NEVER returned in list endpoints.
   bodyText            String?
@@ -352,4 +356,26 @@ model AuditLog {
   user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   account    MailAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   email      EmailIndex?  @relation(fields: [emailId], references: [id], onDelete: SetNull)
+}
+
+model SenderProfile {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  profileName  String
+  patterns     String[]
+  category     String
+  targetFolder String
+  accountId    String?
+  account      MailAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  isActive     Boolean      @default(true)
+  emailCount   Int          @default(0)
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([userId, isActive])
 }
