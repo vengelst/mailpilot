@@ -315,6 +315,16 @@ function getAttachmentDisplayName(attachment: Attachment) {
   return ext ? `Anhang.${ext}` : "Anhang";
 }
 
+function getAttachmentPreviewType(attachment: Attachment): "image" | "pdf" | null {
+  const mime = (attachment.mimeType || "").toLowerCase().split(";")[0].trim();
+  if (mime.startsWith("image/")) return "image";
+  if (mime === "application/pdf") return "pdf";
+  const ext = (attachment.filename || "").split(".").pop()?.toLowerCase() || "";
+  if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext)) return "image";
+  if (ext === "pdf") return "pdf";
+  return null;
+}
+
 type Email = {
   id: string;
   accountId: string;
@@ -4310,23 +4320,19 @@ export function MailWorkspace() {
                                 ) : null}
                               </div>
                               <div className="flex flex-wrap gap-1">
-                                {(() => {
-                                  const mime = (attachment.mimeType || "").toLowerCase().split(";")[0].trim();
-                                  const canPreview = mime.startsWith("image/") || mime === "application/pdf";
-                                  return canPreview ? (
-                                    <button
-                                      onClick={() => setAttachmentPreviewOpen((prev) => {
-                                        const next = new Set(prev);
-                                        if (next.has(attachment.id)) next.delete(attachment.id);
-                                        else next.add(attachment.id);
-                                        return next;
-                                      })}
-                                      className="glass-btn rounded-lg px-2 py-1 text-xs"
-                                    >
-                                      {attachmentPreviewOpen.has(attachment.id) ? "Vorschau schließen" : "Vorschau"}
-                                    </button>
-                                  ) : null;
-                                })()}
+                                {getAttachmentPreviewType(attachment) && (
+                                  <button
+                                    onClick={() => setAttachmentPreviewOpen((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(attachment.id)) next.delete(attachment.id);
+                                      else next.add(attachment.id);
+                                      return next;
+                                    })}
+                                    className="glass-btn rounded-lg px-2 py-1 text-xs"
+                                  >
+                                    {attachmentPreviewOpen.has(attachment.id) ? "Vorschau schließen" : "Vorschau"}
+                                  </button>
+                                )}
                                 <a
                                   href={previewUrl}
                                   target="_blank"
@@ -4360,28 +4366,23 @@ export function MailWorkspace() {
                                 </button>
                               </div>
                             </div>
-                            {(() => {
-                              const mime = (attachment.mimeType || "").toLowerCase().split(";")[0].trim();
-                              const canPreview = mime.startsWith("image/") || mime === "application/pdf";
-                              if (!canPreview || !attachmentPreviewOpen.has(attachment.id)) return null;
-                              return (
-                                <div className="mt-2 overflow-hidden rounded-lg border glass-divider">
-                                  {mime.startsWith("image/") ? (
-                                    <img
-                                      src={previewUrl}
-                                      alt={getAttachmentDisplayName(attachment)}
-                                      className="max-h-[400px] w-full object-contain bg-gray-50"
-                                    />
-                                  ) : (
-                                    <iframe
-                                      src={previewUrl}
-                                      title={getAttachmentDisplayName(attachment)}
-                                      className="h-[500px] w-full"
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })()}
+                            {attachmentPreviewOpen.has(attachment.id) && getAttachmentPreviewType(attachment) && (
+                              <div className="mt-2 overflow-hidden rounded-lg border glass-divider">
+                                {getAttachmentPreviewType(attachment) === "image" ? (
+                                  <img
+                                    src={previewUrl}
+                                    alt={getAttachmentDisplayName(attachment)}
+                                    className="max-h-[400px] w-full object-contain bg-gray-50"
+                                  />
+                                ) : (
+                                  <iframe
+                                    src={previewUrl}
+                                    title={getAttachmentDisplayName(attachment)}
+                                    className="h-[500px] w-full"
+                                  />
+                                )}
+                              </div>
+                            )}
 
                             <div className="mt-2 flex flex-wrap gap-2 border-t border-gray-100 pt-2">
                               <select
