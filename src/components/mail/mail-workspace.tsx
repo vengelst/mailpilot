@@ -398,13 +398,6 @@ type ComposeForm = {
   sendAtLocal: string;
 };
 
-type AttachmentHoverPreview = {
-  url: string;
-  title: string;
-  x: number;
-  y: number;
-};
-
 type ContactCandidate = {
   id: string;
   emailId: string;
@@ -640,8 +633,6 @@ export function MailWorkspace() {
   const [showExternalImages, setShowExternalImages] = useState(false);
   const [printMode, setPrintMode] = useState<"html" | "text">("html");
   const [isBodyMaximized, setIsBodyMaximized] = useState(false);
-  const [hoveredAttachmentPreview, setHoveredAttachmentPreview] =
-    useState<AttachmentHoverPreview | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [emptyFolderModalOpen, setEmptyFolderModalOpen] = useState(false);
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
@@ -1548,7 +1539,6 @@ export function MailWorkspace() {
     const requestId = ++activeLoadEmailRequestIdRef.current;
     setIsLoadingDetail(true);
     setEmailDetailMenuOpen(false);
-    setHoveredAttachmentPreview(null);
     setBodyContent(null);
     setBodyError("");
     setBodyMode("html");
@@ -2225,26 +2215,6 @@ export function MailWorkspace() {
     w.addEventListener("load", onLoad);
   }
 
-  function updateAttachmentHoverPreview(
-    e: ReactMouseEvent<HTMLElement>,
-    previewUrl: string,
-    attachment: Attachment,
-  ) {
-    if (typeof window === "undefined" || window.innerWidth < 1024) return;
-    const width = 360;
-    const height = 240;
-    const margin = 12;
-    const rawX = e.clientX + 16;
-    const rawY = e.clientY - height - 16;
-    const x = Math.max(margin, Math.min(rawX, window.innerWidth - width - margin));
-    const y = Math.max(margin, Math.min(rawY, window.innerHeight - height - margin));
-    setHoveredAttachmentPreview({
-      url: previewUrl,
-      title: getAttachmentDisplayName(attachment),
-      x,
-      y,
-    });
-  }
 
   function printSelectedEmail(mode: "html" | "text" = printMode) {
     if (!selectedEmail) return;
@@ -4311,13 +4281,6 @@ export function MailWorkspace() {
                         return (
                           <li
                             key={attachment.id}
-                            onMouseEnter={(e) =>
-                              updateAttachmentHoverPreview(e, previewUrl, attachment)
-                            }
-                            onMouseMove={(e) =>
-                              updateAttachmentHoverPreview(e, previewUrl, attachment)
-                            }
-                            onMouseLeave={() => setHoveredAttachmentPreview(null)}
                             className="glass relative rounded-xl p-3 text-sm"
                           >
                             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -5070,21 +5033,6 @@ export function MailWorkspace() {
         </div>
       ) : null}
 
-      {hoveredAttachmentPreview ? (
-        <div
-          className="glass-solid pointer-events-none fixed z-[80] hidden h-[240px] w-[360px] overflow-hidden rounded-xl lg:block"
-          style={{ left: hoveredAttachmentPreview.x, top: hoveredAttachmentPreview.y }}
-        >
-          <div className="border-b glass-divider px-2 py-1 text-[11px] glass-text-tertiary">
-            Vorschau: {hoveredAttachmentPreview.title}
-          </div>
-          <iframe
-            title={`Vorschau ${hoveredAttachmentPreview.title}`}
-            src={hoveredAttachmentPreview.url}
-            className="h-[calc(100%-24px)] w-full"
-          />
-        </div>
-      ) : null}
 
       {isBodyMaximized && selectedEmail && bodyContent ? (
         <div
