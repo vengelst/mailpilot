@@ -955,9 +955,11 @@ export function MailWorkspace() {
   }
   function restoreSwipeTrashedEmail(entry: PendingSwipeTrashUndo) {
     removePendingSwipeTrashUndo(entry.email.id);
+    const allMode = selectedAccountIdRef.current === "__all__";
     if (
-      selectedAccountIdRef.current !== entry.sourceAccountId ||
-      selectedFolderPathRef.current !== entry.sourceFolderPath
+      !allMode &&
+      (selectedAccountIdRef.current !== entry.sourceAccountId ||
+       selectedFolderPathRef.current !== entry.sourceFolderPath)
     ) {
       return;
     }
@@ -993,8 +995,9 @@ export function MailWorkspace() {
           removePendingSwipeTrashUndo(email.id);
           if (
             restoreEntry &&
-            selectedAccountIdRef.current === restoreEntry.sourceAccountId &&
-            selectedFolderPathRef.current === restoreEntry.sourceFolderPath
+            (selectedAccountIdRef.current === "__all__" ||
+             (selectedAccountIdRef.current === restoreEntry.sourceAccountId &&
+              selectedFolderPathRef.current === restoreEntry.sourceFolderPath))
           ) {
             setEmails((current) =>
               upsertEmailAtIndex(current, restoreEntry.email, restoreEntry.originalIndex),
@@ -1319,7 +1322,7 @@ export function MailWorkspace() {
   }
 
   async function runAutomationNow() {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || isAllAccounts) return;
     setAutomationRunningNow(true);
     try {
       const res = await fetch("/api/automation/run-now", {
@@ -1344,8 +1347,8 @@ export function MailWorkspace() {
       | { path: string }
       | { fromPath: string; toPath: string },
   ) {
-    if (!selectedAccountId) {
-      setUiError("Bitte zuerst ein Konto wählen.");
+    if (!selectedAccountId || isAllAccounts) {
+      setUiError("Bitte zuerst ein spezifisches Konto wählen.");
       return;
     }
     setIsManagingFolder(true);
@@ -1429,13 +1432,16 @@ export function MailWorkspace() {
     void manageFolder("delete", { path: selectedFolderPath });
   }
 
+  const isAllAccounts = selectedAccountId === "__all__";
+
   function mailListSearchParams(cursor: string | null) {
-    const params = new URLSearchParams({
-      accountId: selectedAccountId,
-      folder: selectedFolderPath,
-      sort,
-      limit: String(mailScrollBatchSize),
-    });
+    const params = new URLSearchParams();
+    if (selectedAccountId && !isAllAccounts) {
+      params.set("accountId", selectedAccountId);
+      params.set("folder", selectedFolderPath);
+    }
+    params.set("sort", sort);
+    params.set("limit", String(mailScrollBatchSize));
     if (query.trim()) params.set("q", query.trim());
     if (hasAttachmentsFilter) params.set("hasAttachments", "true");
     if (actionRequiredFilter) params.set("actionRequired", "true");
@@ -1455,7 +1461,7 @@ export function MailWorkspace() {
     ) {
       return;
     }
-    if (!selectedAccountId || !selectedFolderPath) return;
+    if (!selectedAccountId || (!isAllAccounts && !selectedFolderPath)) return;
     loadMoreInFlightRef.current = true;
     setIsLoadingMoreEmails(true);
     setUiError("");
@@ -1509,7 +1515,7 @@ export function MailWorkspace() {
 
   async function loadEmails() {
     const requestId = ++activeLoadEmailsRequestIdRef.current;
-    if (!selectedAccountId || !selectedFolderPath) {
+    if (!selectedAccountId || (!isAllAccounts && !selectedFolderPath)) {
       if (requestId === activeLoadEmailsRequestIdRef.current) {
         setEmails([]);
         setSelectedEmail(null);
@@ -1655,11 +1661,11 @@ export function MailWorkspace() {
   }
 
   async function reloadFolders() {
-    if (selectedAccountId) await loadFolders(selectedAccountId);
+    if (selectedAccountId && !isAllAccounts) await loadFolders(selectedAccountId);
   }
 
   async function syncAllFolders(trigger: "manual" | "auto" = "manual") {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || isAllAccounts) return;
     const accountId = selectedAccountId;
     if (
       trigger === "manual" &&
@@ -1841,7 +1847,7 @@ export function MailWorkspace() {
   }
 
   async function emptyCurrentFolder() {
-    if (!selectedAccountId || !selectedFolderPath || !folderEmptyKind) return;
+    if (!selectedAccountId || isAllAccounts || !selectedFolderPath || !folderEmptyKind) return;
     if (emptyConfirmText !== "LEEREN") return;
     setBulkBusy(true);
     setUiInfo("");
@@ -1929,8 +1935,8 @@ export function MailWorkspace() {
   }
 
   async function createMobileMoveFolder() {
-    if (!selectedAccountId) {
-      setUiError("Bitte zuerst ein Konto wählen.");
+    if (!selectedAccountId || isAllAccounts) {
+      setUiError("Bitte zuerst ein spezifisches Konto wählen.");
       return;
     }
     const name = mobileNewFolderName.trim();
@@ -2107,7 +2113,7 @@ export function MailWorkspace() {
   }
 
   function openCompose(mode: ComposeMode, source?: Email) {
-    const defaultAccountId = selectedAccountId || accounts[0]?.id || "";
+    const defaultAccountId = (isAllAccounts ? "" : selectedAccountId) || accounts[0]?.id || "";
     const quoteText =
       source && mode !== "new"
         ? buildMailtoQuote(
@@ -2392,7 +2398,17 @@ export function MailWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || isAllAccounts) {
+      if (isAllAccounts) {
+        const timer = setTimeout(() => {
+          setFolders([]);
+          setSelectedFolderPath("");
+          setMoveTargetFolder("");
+        }, 0);
+        return () => clearTimeout(timer);
+      }
+      return;
+    }
     const timer = setTimeout(() => {
       void loadFolders(selectedAccountId);
     }, 0);
@@ -2600,7 +2616,7 @@ export function MailWorkspace() {
   }, [safeMailDocument, bodyMode, selectedEmail?.id]);
 
   useEffect(() => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || isAllAccounts) return;
     const intervalMs = Math.max(5, newMailCheckIntervalMinutes) * 60 * 1000;
     const timer = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
@@ -2619,7 +2635,7 @@ export function MailWorkspace() {
   }, [selectedAccountId, newMailCheckIntervalMinutes, isSyncing]);
 
   useEffect(() => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId || isAllAccounts) return;
     if (typeof document === "undefined") return;
     const triggerRefresh = () => {
       if (document.visibilityState !== "visible") return;
@@ -2890,6 +2906,9 @@ export function MailWorkspace() {
           className="glass-select ml-2 rounded-lg px-2 py-1.5 text-sm"
         >
           <option value="">Konto wählen</option>
+          {accounts.length > 1 && (
+            <option value="__all__">Alle Konten</option>
+          )}
           {accounts.map((account) => (
             <option key={account.id} value={account.id}>
               {account.name}
@@ -2910,12 +2929,12 @@ export function MailWorkspace() {
           <button
             type="button"
             onClick={() => setShowSyncMenu((v) => !v)}
-            disabled={isSyncing || !selectedAccountId}
+            disabled={isSyncing || !selectedAccountId || isAllAccounts}
             aria-haspopup="menu"
             aria-expanded={showSyncMenu}
             aria-controls="mailpilot-sync-menu"
             className="glass-btn-dark rounded-lg px-3 py-1.5 text-sm disabled:opacity-60"
-            title="Synchronisationsoptionen"
+            title={isAllAccounts ? "Sync nicht verfügbar im Alle-Konten-Modus" : "Synchronisationsoptionen"}
           >
             {isSyncing ? "Synchronisiere..." : "Synchronisieren ▾"}
           </button>
@@ -2931,7 +2950,7 @@ export function MailWorkspace() {
                   setShowSyncMenu(false);
                   void syncAllFolders("manual");
                 }}
-                disabled={isSyncing || !selectedAccountId}
+                disabled={isSyncing || !selectedAccountId || isAllAccounts}
                 className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50"
               >
                 <span className="font-medium glass-text-primary">
@@ -2950,9 +2969,9 @@ export function MailWorkspace() {
         <button
           type="button"
           onClick={() => void checkNow()}
-          disabled={isSyncing || !selectedAccountId}
+          disabled={isSyncing || !selectedAccountId || isAllAccounts}
           className="glass-btn rounded-lg px-3 py-1.5 text-sm disabled:opacity-50"
-          title={`Manuell sofort Delta-Sync für alle Ordner starten (Auto-Intervall: ${newMailCheckIntervalMinutes} Min.)`}
+          title={isAllAccounts ? "Sync nicht verfügbar im Alle-Konten-Modus" : `Manuell sofort Delta-Sync für alle Ordner starten (Auto-Intervall: ${newMailCheckIntervalMinutes} Min.)`}
         >
           Check jetzt
         </button>
