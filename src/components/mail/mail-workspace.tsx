@@ -2994,6 +2994,14 @@ export function MailWorkspace() {
           <span className="md:hidden">Suche</span>
         </a>
         <a
+          href="/duplicates"
+          title="Duplikate erkennen"
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm"
+        >
+          <span className="hidden md:inline">Duplikate</span>
+          <span className="md:hidden">Dupl.</span>
+        </a>
+        <a
           href="/ai-assistant"
           title="KI-Assistent"
           className="glass-btn rounded-lg px-3 py-1.5 text-sm"
@@ -3438,6 +3446,13 @@ export function MailWorkspace() {
                   title="Erweiterte Suche"
                 >
                   Detailsuche
+                </a>
+                <a
+                  href="/duplicates"
+                  className="glass-btn rounded-lg px-2 py-1 text-center text-xs"
+                  title="Duplikate erkennen"
+                >
+                  Duplikate
                 </a>
                 <a
                   href="/settings"
