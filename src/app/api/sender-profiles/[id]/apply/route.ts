@@ -35,7 +35,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   );
 
   let moved = 0;
-  let errors = 0;
+  const errorDetails: { emailId: string; from: string | null; subject: string | null; folder: string | null; message: string }[] = [];
 
   for (const email of matching) {
     try {
@@ -45,8 +45,26 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
         data: { folderPath: profile.targetFolder },
       });
       moved++;
-    } catch {
-      errors++;
+    } catch (err) {
+      errorDetails.push({
+        emailId: email.id,
+        from: email.fromEmail,
+        subject: null,
+        folder: email.folderPath,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (errorDetails.length > 0) {
+    const errorEmailIds = errorDetails.map((e) => e.emailId);
+    const emailsWithSubject = await prisma.emailIndex.findMany({
+      where: { id: { in: errorEmailIds } },
+      select: { id: true, subject: true },
+    });
+    const subjectMap = new Map(emailsWithSubject.map((e) => [e.id, e.subject]));
+    for (const detail of errorDetails) {
+      detail.subject = subjectMap.get(detail.emailId) ?? null;
     }
   }
 
@@ -55,5 +73,5 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     data: { emailCount: { increment: moved } },
   });
 
-  return ok({ moved, errors, total: matching.length });
+  return ok({ moved, errors: errorDetails.length, errorDetails, total: matching.length });
 }

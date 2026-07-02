@@ -53,7 +53,9 @@ export default function SenderProfilesPage() {
     id: string;
     moved: number;
     errors: number;
+    errorDetails?: { emailId: string; from: string | null; subject: string | null; folder: string | null; message: string }[];
   } | null>(null);
+  const [showErrors, setShowErrors] = useState(false);
 
   const loadProfiles = useCallback(async () => {
     setLoading(true);
@@ -223,7 +225,8 @@ export default function SenderProfilesPage() {
       setApplyProgress("Verschiebe E-Mails…");
       const data = await res.json();
       if (res.ok) {
-        setApplyResult({ id, moved: data.moved ?? 0, errors: data.errors ?? 0 });
+        setApplyResult({ id, moved: data.moved ?? 0, errors: data.errors ?? 0, errorDetails: data.errorDetails ?? [] });
+        setShowErrors(false);
         await loadProfiles();
       } else {
         setError(data.error ?? "Anwenden fehlgeschlagen");
@@ -566,12 +569,33 @@ export default function SenderProfilesPage() {
               )}
               {applyResult?.id === profile.id && !applyingId && (
                 <div className="mt-2 text-xs glass-text-secondary bg-green-600/10 rounded-lg px-3 py-2">
-                  ✓ {applyResult.moved} E-Mail{applyResult.moved !== 1 ? "s" : ""}{" "}
-                  verschoben
-                  {applyResult.errors > 0 && (
-                    <span className="text-red-400">
-                      , {applyResult.errors} Fehler
+                  <div className="flex items-center gap-2">
+                    <span>
+                      ✓ {applyResult.moved} E-Mail{applyResult.moved !== 1 ? "s" : ""}{" "}
+                      verschoben
                     </span>
+                    {applyResult.errors > 0 && (
+                      <button
+                        onClick={() => setShowErrors((v) => !v)}
+                        className="text-red-400 hover:text-red-300 underline cursor-pointer"
+                      >
+                        {applyResult.errors} Fehler {showErrors ? "▲" : "▼"}
+                      </button>
+                    )}
+                  </div>
+                  {showErrors && applyResult.errorDetails && applyResult.errorDetails.length > 0 && (
+                    <div className="mt-2 space-y-1 max-h-48 overflow-y-auto border-t border-red-400/20 pt-2">
+                      {applyResult.errorDetails.map((err, i) => (
+                        <div key={i} className="bg-red-600/10 rounded px-2 py-1 text-[11px] text-red-300">
+                          <div className="font-medium truncate">
+                            {err.subject ?? "(Ohne Betreff)"} — <span className="text-red-400/80">{err.from ?? "unbekannt"}</span>
+                          </div>
+                          <div className="text-red-400/70 truncate">
+                            Ordner: {err.folder ?? "?"} → Fehler: {err.message}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
