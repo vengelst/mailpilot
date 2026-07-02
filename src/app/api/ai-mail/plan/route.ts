@@ -59,24 +59,9 @@ export async function POST(req: NextRequest) {
     const effectiveIntent = intent === "unknown" ? "search" : intent;
     const isInformational = !intentRunsActionPlan(effectiveIntent);
 
-    // For action plans we cap how many emails the LLM ever sees. Reject
-    // explicit oversized requests with a friendly message instead of letting
-    // them silently shrink — the user typed 2000 for a reason and deserves
-    // an explanation. For count/search this limit doesn't apply.
-    if (
-      !isInformational &&
-      payload.maxCandidates !== undefined &&
-      payload.maxCandidates > MAX_AI_CANDIDATES
-    ) {
-      return fail(
-        `Maximal ${MAX_AI_CANDIDATES} E-Mails pro KI-Aktionsauftrag erlaubt. ` +
-          `Filter/Zeitraum bitte einschränken oder Auswahl reduzieren.`,
-        400,
-      );
-    }
     // The actual fetch limit:
     //   - count/search: only enough rows to fill the sample list
-    //   - action:       up to MAX_AI_CANDIDATES (or whatever the user asked for)
+    //   - action:       up to MAX_AI_CANDIDATES (silently capped)
     const fetchLimit = isInformational
       ? SAMPLE_EMAILS_LIMIT
       : Math.min(payload.maxCandidates ?? 50, MAX_AI_CANDIDATES);

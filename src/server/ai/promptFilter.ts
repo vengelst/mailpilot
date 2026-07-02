@@ -300,19 +300,19 @@ const EXTRACT_CONTACTS_PATTERNS = [
 /**
  * Classify the user prompt into one of the supported intents.
  *
- * Order matters — a prompt like "zähle alle datev mails und verschiebe sie"
- * is genuinely ambiguous, but we treat it as "count" because the explicit
- * verb "zähle" is the primary instruction and we don't want to silently
- * execute moves on counting prompts.
+ * Action intents (move, trash, categorize, extract) take priority over
+ * search, because prompts like "sortiere alle Rechnungen und zeige mir
+ * was passiert" have "zeige" but the primary intent is the sort action.
+ * Count always wins — "zähle" is unambiguous.
  */
 export function detectAssistantIntent(prompt: string): AiAssistantIntent {
   const lower = prompt.toLowerCase();
   if (COUNT_PATTERNS.some((re) => re.test(lower))) return "count";
-  if (SEARCH_PATTERNS.some((re) => re.test(lower))) return "search";
   if (TRASH_PATTERNS.some((re) => re.test(lower))) return "trash";
   if (EXTRACT_CONTACTS_PATTERNS.some((re) => re.test(lower))) return "extract_contacts";
   if (CATEGORIZE_PATTERNS.some((re) => re.test(lower))) return "categorize";
   if (SPAM_OR_MOVE_PATTERNS.some((re) => re.test(lower))) return "move";
+  if (SEARCH_PATTERNS.some((re) => re.test(lower))) return "search";
   return "unknown";
 }
 
