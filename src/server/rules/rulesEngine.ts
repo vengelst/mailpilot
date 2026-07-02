@@ -88,7 +88,7 @@ function evaluateNode(
   return allMatched && anyMatched;
 }
 
-function evaluateRuleCondition(
+export function evaluateRuleCondition(
   condition: RuleCondition,
   email: {
     fromEmail?: string | null;
