@@ -200,6 +200,7 @@ type FolderTreeRowProps = {
   onDragOver?: (e: React.DragEvent, path: string) => void;
   onDragLeave?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent, path: string) => void;
+  onFolderDrop?: (sourcePath: string, targetPath: string) => void;
 };
 
 function FolderTreeRow({
@@ -214,6 +215,7 @@ function FolderTreeRow({
   onDragOver,
   onDragLeave,
   onDrop,
+  onFolderDrop,
 }: FolderTreeRowProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.path);
@@ -226,18 +228,45 @@ function FolderTreeRow({
   const indent = depth * 12;
   const folderCountTitle = `Ungelesen: ${unread} · Gelesen: ${read} · Alle: ${total}`;
 
+  function handleFolderDragStart(e: React.DragEvent) {
+    if (!node.folder) return;
+    e.dataTransfer.setData("application/x-folder-path", node.path);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleFolderDropOnThis(e: React.DragEvent) {
+    const sourceFolderPath = e.dataTransfer.getData("application/x-folder-path");
+    if (sourceFolderPath && onFolderDrop && node.folder) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (sourceFolderPath !== node.path && !node.path.startsWith(sourceFolderPath + "/")) {
+        onFolderDrop(sourceFolderPath, node.path);
+      }
+    }
+  }
+
   return (
     <li>
       <div
-        className={`flex items-center gap-1 pr-2 rounded-lg mx-1 transition-colors ${
+        draggable={!!node.folder}
+        onDragStart={handleFolderDragStart}
+        className={`flex items-center gap-1 pr-2 rounded-lg mx-1 transition-colors cursor-grab active:cursor-grabbing ${
           isDragOver ? "ring-2 ring-blue-500 bg-blue-100/50 dark:bg-blue-900/30" : ""
         } ${
           isActive && !isDragOver ? "glass-active" : !isDragOver && unread > 0 ? "glass-text-primary font-medium" : !isDragOver ? "glass-text-secondary" : ""
         }`}
         style={{ paddingLeft: indent }}
-        onDragOver={(e) => { if (node.folder && onDragOver) { e.preventDefault(); onDragOver(e, node.path); } }}
+        onDragOver={(e) => {
+          if (node.folder && onDragOver) { e.preventDefault(); onDragOver(e, node.path); }
+          if (e.dataTransfer.types.includes("application/x-folder-path")) e.preventDefault();
+        }}
         onDragLeave={(e) => { if (onDragLeave) onDragLeave(e); }}
-        onDrop={(e) => { if (node.folder && onDrop) { e.preventDefault(); onDrop(e, node.path); } }}
+        onDrop={(e) => {
+          handleFolderDropOnThis(e);
+          if (node.folder && onDrop && !e.dataTransfer.types.includes("application/x-folder-path")) {
+            e.preventDefault(); onDrop(e, node.path);
+          }
+        }}
       >
         {hasChildren ? (
           <button
@@ -295,6 +324,7 @@ function FolderTreeRow({
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
               onDrop={onDrop}
+              onFolderDrop={onFolderDrop}
             />
           ))}
         </ul>
@@ -1479,9 +1509,14 @@ export function MailWorkspace() {
   }
 
   function createFolderPrompt() {
-    const input = window.prompt("Neuen Ordnernamen eingeben (z. B. Kunden/2026):");
-    const path = input?.trim();
-    if (!path) return;
+    const prefix = selectedFolderPath ? `${selectedFolderPath}/` : "";
+    const hint = selectedFolderPath
+      ? `Unterordner von "${folderDisplayName(selectedFolderPath)}" erstellen.\nOrdnername:`
+      : "Neuen Ordnernamen eingeben (z. B. Kunden/Neukunden):";
+    const input = window.prompt(hint);
+    const name = input?.trim();
+    if (!name) return;
+    const path = prefix + name;
     void manageFolder("create", { path });
   }
 
@@ -1518,6 +1553,19 @@ export function MailWorkspace() {
       return;
     }
     void manageFolder("delete", { path: selectedFolderPath });
+  }
+
+  function handleFolderMoveByDrag(sourcePath: string, targetPath: string) {
+    const folderName = sourcePath.split("/").pop() || sourcePath;
+    const newPath = `${targetPath}/${folderName}`;
+    if (
+      !window.confirm(
+        `Ordner "${folderName}" nach "${targetPath}" verschieben?\n\nNeuer Pfad: ${newPath}`,
+      )
+    ) {
+      return;
+    }
+    void manageFolder("rename", { fromPath: sourcePath, toPath: newPath });
   }
 
   const isAllAccounts = selectedAccountId === "__all__";
@@ -3668,6 +3716,7 @@ export function MailWorkspace() {
                             onDragOver={handleFolderDragOver}
                             onDragLeave={handleFolderDragLeave}
                             onDrop={handleFolderDrop}
+                            onFolderDrop={handleFolderMoveByDrag}
                             onSelect={(path) => {
                               setSelectedFolderPath(path);
                               setSelectedEmail(null);
