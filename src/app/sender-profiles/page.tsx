@@ -339,7 +339,7 @@ export default function SenderProfilesPage() {
                 {patterns.map((p, i) => (
                   <span
                     key={i}
-                    className="inline-flex items-center gap-1 rounded-full bg-blue-600/20 px-3 py-1 text-xs text-blue-300"
+                    className="inline-flex items-center gap-1 rounded-full bg-blue-600/20 px-3 py-1 text-xs text-gray-900 dark:text-gray-100"
                   >
                     {p}
                     <button
@@ -428,7 +428,7 @@ export default function SenderProfilesPage() {
               <label className="block text-xs glass-text-secondary mb-1">
                 Zielordner
                 {!accountId && accounts.length > 0 && (
-                  <span className="text-yellow-400 ml-2">(Erst Konto wählen für Server-Ordner)</span>
+                  <span className="text-gray-700 dark:text-gray-300 ml-2">(Erst Konto wählen für Server-Ordner)</span>
                 )}
               </label>
               {!useNewFolder ? (
@@ -547,7 +547,7 @@ export default function SenderProfilesPage() {
                     <span className="text-sm font-medium glass-text-primary">
                       {profile.profileName}
                     </span>
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-600/20 text-blue-300">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-600/20 text-gray-900 dark:text-gray-100">
                       {profile.category}
                     </span>
                     <span className="text-[11px] glass-text-tertiary">

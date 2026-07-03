@@ -1401,19 +1401,17 @@ export function MailWorkspace() {
       });
       setUiInfo(`Absender-Profil für ${senderPromptData.domain || senderPromptData.email} erstellt.`);
 
-      if (targetFolder && targetFolder !== "INBOX") {
+      if (targetFolder && targetFolder !== "INBOX" && selectedEmail) {
         const domain = senderPromptData.domain;
-        const matchingEmails = emails.filter(
-          (e) => e.fromEmail && (e.fromEmail === senderPromptData.email || (domain && e.fromEmail.endsWith(`@${domain}`)))
-            && e.folderPath === "INBOX",
-        );
-        if (matchingEmails.length > 0) {
-          const ids = matchingEmails.map((e) => e.id);
-          setEmails((prev) => prev.filter((e) => !ids.includes(e.id)));
-          if (selectedEmail && ids.includes(selectedEmail.id)) {
-            setSelectedEmail(null);
-          }
-          void runBulk("move_folder", { targetFolder }, ids);
+        const emailMatch = selectedEmail.fromEmail &&
+          (selectedEmail.fromEmail === senderPromptData.email ||
+            (domain && selectedEmail.fromEmail.endsWith(`@${domain}`))) &&
+          selectedEmail.folderPath === "INBOX";
+        if (emailMatch) {
+          const id = selectedEmail.id;
+          setEmails((prev) => prev.filter((e) => e.id !== id));
+          setSelectedEmail(null);
+          void runActionForEmail(id, `/api/emails/${id}/move`, { targetFolder });
         }
       }
     } catch {
