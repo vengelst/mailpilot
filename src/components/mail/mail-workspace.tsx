@@ -251,7 +251,7 @@ function FolderTreeRow({
         draggable={!!node.folder}
         onDragStart={handleFolderDragStart}
         className={`flex items-center gap-1 pr-2 rounded-lg mx-1 transition-colors cursor-grab active:cursor-grabbing ${
-          isDragOver ? "ring-2 ring-blue-500 bg-blue-100/50 dark:bg-blue-900/30" : ""
+          isDragOver ? "ring-4 ring-blue-500 bg-blue-100/50 dark:bg-blue-900/30" : ""
         } ${
           isActive && !isDragOver ? "glass-active" : !isDragOver && unread > 0 ? "glass-text-primary font-medium" : !isDragOver ? "glass-text-secondary" : ""
         }`}
