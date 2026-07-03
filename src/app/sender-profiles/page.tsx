@@ -15,6 +15,7 @@ type SenderProfile = {
 };
 
 type FolderInfo = { path: string; count: number };
+type ImapFolder = { path: string; name: string; totalCount?: number };
 type AccountInfo = { id: string; name: string };
 
 const CATEGORIES = [
@@ -30,6 +31,7 @@ export default function SenderProfilesPage() {
   const [profiles, setProfiles] = useState<SenderProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [folders, setFolders] = useState<FolderInfo[]>([]);
+  const [imapFolders, setImapFolders] = useState<ImapFolder[]>([]);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [search, setSearch] = useState("");
 
@@ -93,6 +95,28 @@ export default function SenderProfilesPage() {
     }
   }, []);
 
+  const loadImapFolders = useCallback(async (accId: string) => {
+    if (!accId) {
+      setImapFolders([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/accounts/${accId}/folders`);
+      if (res.ok) {
+        const data = await res.json();
+        const list: ImapFolder[] = (data.folders ?? []).map((f: { path: string; name: string; totalCount?: number }) => ({
+          path: f.path,
+          name: f.name ?? f.path,
+          totalCount: f.totalCount ?? 0,
+        }));
+        list.sort((a, b) => a.path.localeCompare(b.path));
+        setImapFolders(list);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadProfiles();
@@ -130,6 +154,9 @@ export default function SenderProfilesPage() {
       setCategory(profile.category);
       setTargetFolder(profile.targetFolder);
       setAccountId(profile.accountId ?? "");
+      if (profile.accountId) {
+        void loadImapFolders(profile.accountId);
+      }
     }
     setShowEditor(true);
   }
@@ -371,10 +398,38 @@ export default function SenderProfilesPage() {
               </select>
             </div>
 
+            {/* Account – zuerst wählen, damit die IMAP-Ordner geladen werden */}
+            {accounts.length > 0 && (
+              <div>
+                <label className="block text-xs glass-text-secondary mb-1">
+                  Konto
+                </label>
+                <select
+                  className="glass rounded-lg px-3 py-2 text-sm glass-text-primary w-full"
+                  value={accountId}
+                  onChange={(e) => {
+                    setAccountId(e.target.value);
+                    setTargetFolder("");
+                    void loadImapFolders(e.target.value);
+                  }}
+                >
+                  <option value="">Alle Konten</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Target Folder */}
             <div>
               <label className="block text-xs glass-text-secondary mb-1">
                 Zielordner
+                {!accountId && accounts.length > 0 && (
+                  <span className="text-yellow-400 ml-2">(Erst Konto wählen für Server-Ordner)</span>
+                )}
               </label>
               {!useNewFolder ? (
                 <div className="flex gap-2">
@@ -384,11 +439,17 @@ export default function SenderProfilesPage() {
                     onChange={(e) => setTargetFolder(e.target.value)}
                   >
                     <option value="">Ordner wählen…</option>
-                    {folders.map((f) => (
-                      <option key={f.path} value={f.path}>
-                        {f.path} ({f.count})
-                      </option>
-                    ))}
+                    {imapFolders.length > 0
+                      ? imapFolders.map((f) => (
+                          <option key={f.path} value={f.path}>
+                            {f.path}{f.totalCount ? ` (${f.totalCount})` : ""}
+                          </option>
+                        ))
+                      : folders.map((f) => (
+                          <option key={f.path} value={f.path}>
+                            {f.path} ({f.count})
+                          </option>
+                        ))}
                   </select>
                   <button
                     type="button"
@@ -420,27 +481,6 @@ export default function SenderProfilesPage() {
                 </div>
               )}
             </div>
-
-            {/* Account */}
-            {accounts.length > 0 && (
-              <div>
-                <label className="block text-xs glass-text-secondary mb-1">
-                  Konto
-                </label>
-                <select
-                  className="glass rounded-lg px-3 py-2 text-sm glass-text-primary w-full"
-                  value={accountId}
-                  onChange={(e) => setAccountId(e.target.value)}
-                >
-                  <option value="">Alle Konten</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             {/* Apply to existing */}
             {!editingProfile && (
