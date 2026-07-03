@@ -1966,32 +1966,38 @@ export function MailWorkspace() {
     if (requestId !== activeLoadEmailRequestIdRef.current) {
       return;
     }
-    if (emailData && !(emailData.flags ?? []).includes("\\Seen")) {
-      fetch(`/api/emails/${id}/mark-read`, { method: "POST" })
-        .then(async (res) => {
-          if (!res.ok) return;
-          const mrData = await res.json().catch(() => ({}));
-          if (mrData.movedTo) {
-            if (autoMoveToastTimerRef.current) clearTimeout(autoMoveToastTimerRef.current);
-            setAutoMoveToast({ emailId: id, folder: mrData.movedTo });
-            autoMoveToastTimerRef.current = setTimeout(() => {
-              setAutoMoveToast(null);
-              autoMoveToastTimerRef.current = null;
-            }, 5000);
-            setEmails((prev) => prev.filter((e) => e.id !== id));
-            setSelectedEmail((prev) => (prev?.id === id ? null : prev));
-            void reloadFolders();
-          }
-        })
-        .catch(() => {});
-      setSelectedEmail((prev: Email | null) =>
-        prev?.id === id ? { ...prev, flags: [...(prev.flags ?? []), "\\Seen"] } : prev,
-      );
-      setEmails((prev) =>
-        prev.map((e) =>
-          e.id === id ? { ...e, flags: [...(e.flags ?? []), "\\Seen"] } : e,
-        ),
-      );
+    if (emailData) {
+      const isUnread = !(emailData.flags ?? []).includes("\\Seen");
+      const isInInbox = emailData.folderPath === "INBOX";
+      if (isUnread || isInInbox) {
+        fetch(`/api/emails/${id}/mark-read`, { method: "POST" })
+          .then(async (res) => {
+            if (!res.ok) return;
+            const mrData = await res.json().catch(() => ({}));
+            if (mrData.movedTo) {
+              if (autoMoveToastTimerRef.current) clearTimeout(autoMoveToastTimerRef.current);
+              setAutoMoveToast({ emailId: id, folder: mrData.movedTo });
+              autoMoveToastTimerRef.current = setTimeout(() => {
+                setAutoMoveToast(null);
+                autoMoveToastTimerRef.current = null;
+              }, 5000);
+              setEmails((prev) => prev.filter((e) => e.id !== id));
+              setSelectedEmail((prev) => (prev?.id === id ? null : prev));
+              void reloadFolders();
+            }
+          })
+          .catch(() => {});
+      }
+      if (isUnread) {
+        setSelectedEmail((prev: Email | null) =>
+          prev?.id === id ? { ...prev, flags: [...(prev.flags ?? []), "\\Seen"] } : prev,
+        );
+        setEmails((prev) =>
+          prev.map((e) =>
+            e.id === id ? { ...e, flags: [...(e.flags ?? []), "\\Seen"] } : e,
+          ),
+        );
+      }
     }
     if (emailData) {
       void checkSenderOnOpen(emailData);

@@ -23,19 +23,22 @@ export async function POST(
     });
     if (!email) return fail("Email not found", 404);
 
-    await markEmailSeen(id, session.userId, true);
-    const flags = Array.from(new Set([...(email.flags || []), "\\Seen"]));
-    await prisma.emailIndex.update({ where: { id }, data: { flags } });
+    const alreadySeen = (email.flags || []).includes("\\Seen");
+    if (!alreadySeen) {
+      await markEmailSeen(id, session.userId, true);
+      const flags = Array.from(new Set([...(email.flags || []), "\\Seen"]));
+      await prisma.emailIndex.update({ where: { id }, data: { flags } });
 
-    await writeAuditLog({
-      userId: session.userId,
-      accountId: email.accountId,
-      emailId: id,
-      action: "email.mark_read",
-      actor: "user",
-      beforeJson: { flags: email.flags },
-      afterJson: { flags },
-    });
+      await writeAuditLog({
+        userId: session.userId,
+        accountId: email.accountId,
+        emailId: id,
+        action: "email.mark_read",
+        actor: "user",
+        beforeJson: { flags: email.flags },
+        afterJson: { flags },
+      });
+    }
 
     if (email.folderPath === "INBOX" && !email.autoMoveBlocked) {
       const profiles = await prisma.senderProfile.findMany({

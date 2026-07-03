@@ -35,7 +35,7 @@ export function suggestProfileName(fromName: string, email: string): string {
 
 export function suggestPatterns(email: string): string[] {
   const domain = extractDomainFromEmail(email);
-  return domain ? [domain] : [email.toLowerCase()];
+  return domain ? [`*@${domain}`] : [email.toLowerCase()];
 }
 
 const CATEGORY_FOLDER_MAP: Record<string, string> = {
