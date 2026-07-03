@@ -1167,17 +1167,29 @@ export function MailWorkspace() {
       dragExpandTimeoutRef.current = null;
     }
     setDragOverFolderPath(null);
+    const idsRaw = e.dataTransfer.getData("text/x-mailpilot-email-ids");
     const emailId = e.dataTransfer.getData("text/x-mailpilot-email-id");
-    if (!emailId) return;
-    const droppedEmail = emails.find((em) => em.id === emailId);
-    void runActionForEmail(emailId, `/api/emails/${emailId}/move`, { targetFolder: targetPath });
-    if (droppedEmail?.fromEmail) {
-      void checkSenderProfileAfterMove(
-        droppedEmail.fromEmail,
-        droppedEmail.fromName ?? "",
-        targetPath,
-        emailId,
-      );
+    let ids: string[] = [];
+    try {
+      ids = idsRaw ? (JSON.parse(idsRaw) as string[]) : [];
+    } catch { /* ignore */ }
+    if (ids.length === 0 && emailId) ids = [emailId];
+    if (ids.length === 0) return;
+
+    if (ids.length > 1) {
+      void runBulk("move_folder", { targetFolder: targetPath }, ids);
+    } else {
+      const singleId = ids[0];
+      const droppedEmail = emails.find((em) => em.id === singleId);
+      void runActionForEmail(singleId, `/api/emails/${singleId}/move`, { targetFolder: targetPath });
+      if (droppedEmail?.fromEmail) {
+        void checkSenderProfileAfterMove(
+          droppedEmail.fromEmail,
+          droppedEmail.fromName ?? "",
+          targetPath,
+          singleId,
+        );
+      }
     }
   }
 
@@ -4271,7 +4283,12 @@ export function MailWorkspace() {
                     <div
                       draggable
                       onDragStart={(e) => {
+                        const dragIds =
+                          selectedIds.size > 1 && selectedIds.has(email.id)
+                            ? Array.from(selectedIds)
+                            : [email.id];
                         e.dataTransfer.setData("text/x-mailpilot-email-id", email.id);
+                        e.dataTransfer.setData("text/x-mailpilot-email-ids", JSON.stringify(dragIds));
                         e.dataTransfer.effectAllowed = "move";
                       }}
                       onContextMenu={(e) => openMailContextMenu(e, email)}
