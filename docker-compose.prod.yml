@@ -16,6 +16,7 @@ services:
     image: mailpilot-app:latest
     container_name: mailpilot-app
     restart: unless-stopped
+    pid: host
     env_file:
       - .env.production
     depends_on:

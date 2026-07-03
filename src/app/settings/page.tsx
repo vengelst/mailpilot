@@ -63,6 +63,11 @@ const sections = [
     description: "Erkannte Kontakte prüfen und nach Google Contacts exportieren.",
   },
   {
+    href: "/settings/system",
+    title: "Systeminformationen",
+    description: "Server-Performance, CPU, RAM, Festplatte und Prozesse überwachen.",
+  },
+  {
     href: "/audit",
     title: "Audit-Log",
     description: "Alle relevanten Aktionen nachvollziehen.",
