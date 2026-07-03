@@ -35,12 +35,15 @@ type SystemInfo = {
     interfaces: Array<{ name: string; address: string; family: string }>;
     stats: Array<{ name: string; rxMB: number; txMB: number }>;
   };
-  topProcesses: Array<{ pid: string; cpu: string; mem: string; command: string }>;
+  topProcesses: Array<{ pid: string; user: string; cpu: string; mem: string; command: string }>;
+  osUsers: {
+    loggedIn: Array<{ user: string; terminal: string; loginTime: string }>;
+    accounts: Array<{ user: string; uid: string; shell: string }>;
+  };
   database: {
     emailCount: number;
     accountCount: number;
-    userCount: number;
-    users: Array<{ id: string; email: string; role: string; createdAt: string }>;
+    appUserCount: number;
     topFolders: Array<{ folder: string; count: number }>;
   };
 };
@@ -155,8 +158,8 @@ export default function SystemInfoPage() {
             <p className="text-xs glass-text-secondary mt-1">IMAP-Konten</p>
           </div>
           <div className="glass-card p-4 rounded-xl text-center">
-            <p className="text-2xl font-bold glass-text-primary">{data.database.userCount}</p>
-            <p className="text-xs glass-text-secondary mt-1">Benutzer</p>
+            <p className="text-2xl font-bold glass-text-primary">{data.osUsers.loggedIn.length}</p>
+            <p className="text-xs glass-text-secondary mt-1">OS-User online</p>
           </div>
           <div className="glass-card p-4 rounded-xl text-center">
             <p className="text-2xl font-bold glass-text-primary">{data.server.uptime.formatted}</p>
@@ -267,6 +270,7 @@ export default function SystemInfoPage() {
                 <thead>
                   <tr className="glass-text-tertiary">
                     <th className="text-left py-1">PID</th>
+                    <th className="text-left py-1">User</th>
                     <th className="text-right py-1">CPU%</th>
                     <th className="text-right py-1">MEM%</th>
                     <th className="text-left py-1 pl-3">Befehl</th>
@@ -276,9 +280,10 @@ export default function SystemInfoPage() {
                   {data.topProcesses.map((p, i) => (
                     <tr key={i} className="border-t border-white/5">
                       <td className="py-1 font-mono glass-text-secondary">{p.pid}</td>
+                      <td className="py-1 glass-text-secondary">{p.user}</td>
                       <td className="text-right py-1 font-mono glass-text-primary">{p.cpu}</td>
                       <td className="text-right py-1 font-mono glass-text-primary">{p.mem}</td>
-                      <td className="py-1 pl-3 glass-text-secondary truncate max-w-[200px]">{p.command}</td>
+                      <td className="py-1 pl-3 glass-text-secondary truncate max-w-[180px]">{p.command}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -299,31 +304,58 @@ export default function SystemInfoPage() {
           </StatCard>
         </div>
 
-        {/* Registered Users */}
-        <StatCard title="Registrierte Benutzer">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="glass-text-tertiary">
-                  <th className="text-left py-1">E-Mail</th>
-                  <th className="text-left py-1">Rolle</th>
-                  <th className="text-left py-1">Registriert</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.database.users.map((u) => (
-                  <tr key={u.id} className="border-t border-white/5">
-                    <td className="py-1.5 glass-text-primary">{u.email}</td>
-                    <td className="py-1.5 glass-text-secondary">{u.role}</td>
-                    <td className="py-1.5 glass-text-secondary">
-                      {new Date(u.createdAt).toLocaleDateString("de-DE")}
-                    </td>
+        {/* OS Users */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <StatCard title="Eingeloggte OS-Benutzer">
+            {data.osUsers.loggedIn.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="glass-text-tertiary">
+                      <th className="text-left py-1">Benutzer</th>
+                      <th className="text-left py-1">Terminal</th>
+                      <th className="text-left py-1">Login-Zeit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.osUsers.loggedIn.map((u, i) => (
+                      <tr key={i} className="border-t border-white/5">
+                        <td className="py-1.5 glass-text-primary font-mono">{u.user}</td>
+                        <td className="py-1.5 glass-text-secondary font-mono">{u.terminal}</td>
+                        <td className="py-1.5 glass-text-secondary">{u.loginTime}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-xs glass-text-tertiary">Keine interaktiven Sitzungen aktiv</p>
+            )}
+          </StatCard>
+
+          <StatCard title="System-Accounts (Login möglich)">
+            <div className="overflow-x-auto max-h-[200px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="glass-text-tertiary">
+                    <th className="text-left py-1">Benutzer</th>
+                    <th className="text-left py-1">UID</th>
+                    <th className="text-left py-1">Shell</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </StatCard>
+                </thead>
+                <tbody>
+                  {data.osUsers.accounts.map((u, i) => (
+                    <tr key={i} className="border-t border-white/5">
+                      <td className="py-1.5 glass-text-primary font-mono">{u.user}</td>
+                      <td className="py-1.5 glass-text-secondary font-mono">{u.uid}</td>
+                      <td className="py-1.5 glass-text-secondary font-mono">{u.shell}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </StatCard>
+        </div>
 
         <p className="mt-4 text-[10px] glass-text-tertiary text-center">
           Daten werden alle 30 Sekunden automatisch aktualisiert.

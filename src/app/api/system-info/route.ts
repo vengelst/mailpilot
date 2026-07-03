@@ -3,6 +3,7 @@ import { fail, ok } from "@/lib/http";
 import { prisma } from "@/server/db/prisma";
 import os from "os";
 import { execSync } from "child_process";
+import { readFileSync } from "fs";
 
 function safeExec(cmd: string): string {
   try {
@@ -10,6 +11,26 @@ function safeExec(cmd: string): string {
   } catch {
     return "";
   }
+}
+
+function safeReadFile(path: string): string {
+  try {
+    return readFileSync(path, "utf-8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function getCpuUsagePercent(): number {
+  const stat = safeReadFile("/proc/stat");
+  if (!stat) return 0;
+  const cpuLine = stat.split("\n").find((l) => l.startsWith("cpu "));
+  if (!cpuLine) return 0;
+  const parts = cpuLine.split(/\s+/).slice(1).map(Number);
+  const idle = parts[3] + (parts[4] ?? 0);
+  const total = parts.reduce((a, b) => a + b, 0);
+  if (total === 0) return 0;
+  return Math.round(((total - idle) / total) * 100);
 }
 
 function getCpuInfo() {
@@ -21,7 +42,7 @@ function getCpuInfo() {
     loadAvg1m: loadAvg[0],
     loadAvg5m: loadAvg[1],
     loadAvg15m: loadAvg[2],
-    usagePercent: Math.round((loadAvg[0] / cpus.length) * 100),
+    usagePercent: getCpuUsagePercent(),
   };
 }
 
@@ -50,7 +71,7 @@ function getDiskInfo() {
   };
 }
 
-function getTopProcesses(): Array<{ pid: string; cpu: string; mem: string; command: string }> {
+function getTopProcesses(): Array<{ pid: string; user: string; cpu: string; mem: string; command: string }> {
   const raw = safeExec("ps aux --sort=-%cpu | head -11");
   if (!raw) return [];
   const lines = raw.split("\n").slice(1);
@@ -58,6 +79,7 @@ function getTopProcesses(): Array<{ pid: string; cpu: string; mem: string; comma
     const parts = line.split(/\s+/);
     return {
       pid: parts[1] ?? "",
+      user: parts[0] ?? "",
       cpu: parts[2] ?? "0",
       mem: parts[3] ?? "0",
       command: parts.slice(10).join(" ").slice(0, 80),
@@ -103,17 +125,42 @@ function getUptime() {
   return { seconds: uptimeSec, formatted: `${days}d ${hours}h ${minutes}m` };
 }
 
+function getOsUsers(): Array<{ user: string; terminal: string; loginTime: string }> {
+  const raw = safeExec("who 2>/dev/null");
+  if (!raw) return [];
+  return raw.split("\n").map((line) => {
+    const parts = line.split(/\s+/);
+    return {
+      user: parts[0] ?? "",
+      terminal: parts[1] ?? "",
+      loginTime: parts.slice(2, 4).join(" "),
+    };
+  });
+}
+
+function getOsAccounts(): Array<{ user: string; uid: string; shell: string }> {
+  const raw = safeExec("cat /etc/passwd 2>/dev/null");
+  if (!raw) return [];
+  return raw
+    .split("\n")
+    .map((line) => {
+      const parts = line.split(":");
+      return { user: parts[0] ?? "", uid: parts[2] ?? "", shell: parts[6] ?? "" };
+    })
+    .filter((u) => {
+      const uid = parseInt(u.uid, 10);
+      return (uid === 0 || uid >= 1000) && !u.shell.includes("nologin") && !u.shell.includes("false");
+    });
+}
+
 export async function GET() {
   const session = await getSessionFromCookies();
   if (!session) return fail("Unauthorized", 401);
 
-  const [emailCount, accountCount, userCount, users, folderStats] = await Promise.all([
+  const [emailCount, accountCount, appUserCount, folderStats] = await Promise.all([
     prisma.emailIndex.count(),
     prisma.mailAccount.count(),
     prisma.user.count(),
-    prisma.user.findMany({
-      select: { id: true, email: true, role: true, createdAt: true },
-    }),
     prisma.emailIndex.groupBy({
       by: ["folderPath"],
       _count: { id: true },
@@ -135,11 +182,14 @@ export async function GET() {
     disk: getDiskInfo(),
     network: getNetworkInfo(),
     topProcesses: getTopProcesses(),
+    osUsers: {
+      loggedIn: getOsUsers(),
+      accounts: getOsAccounts(),
+    },
     database: {
       emailCount,
       accountCount,
-      userCount,
-      users,
+      appUserCount,
       topFolders: folderStats.map((f) => ({
         folder: f.folderPath,
         count: f._count.id,
