@@ -79,7 +79,13 @@ export async function POST(
       message: "Ordner werden geladen …",
     });
 
-    const folders = await syncFolders(accountId, session.userId);
+    const allFolders = await syncFolders(accountId, session.userId);
+    const accountSettings = await prisma.mailAccount.findUnique({
+      where: { id: accountId },
+      select: { excludedFolders: true },
+    });
+    const excluded = new Set((accountSettings?.excludedFolders ?? []).map((p: string) => p.toLowerCase()));
+    const folders = allFolders.filter((f) => !excluded.has(f.path.toLowerCase()));
     const folderRows = await prisma.mailFolder.findMany({
       where: { accountId },
       select: { path: true, existsCount: true },

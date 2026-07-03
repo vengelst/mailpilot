@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Account = {
@@ -43,10 +43,58 @@ export default function AccountsSettingsPage() {
   const [feedback, setFeedback] = useState<{ kind: "info" | "error"; text: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [syncSettingsOpen, setSyncSettingsOpen] = useState(false);
+  const [availableFolders, setAvailableFolders] = useState<{ path: string; name: string }[]>([]);
+  const [excludedFolders, setExcludedFolders] = useState<string[]>([]);
+  const [syncSettingsLoading, setSyncSettingsLoading] = useState(false);
+  const [syncSettingsSaving, setSyncSettingsSaving] = useState(false);
+
   const selectedAccount = useMemo(
     () => accounts.find((a) => a.id === selectedId) ?? null,
     [accounts, selectedId],
   );
+
+  const loadSyncSettings = useCallback(async (accountId: string) => {
+    setSyncSettingsLoading(true);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}/sync-settings`);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableFolders(data.availableFolders ?? []);
+        setExcludedFolders(data.excludedFolders ?? []);
+      }
+    } catch { /* ignore */ }
+    setSyncSettingsLoading(false);
+  }, []);
+
+  async function saveSyncSettings() {
+    if (!selectedId) return;
+    setSyncSettingsSaving(true);
+    try {
+      const res = await fetch(`/api/accounts/${selectedId}/sync-settings`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ excludedFolders }),
+      });
+      if (res.ok) {
+        setFeedback({ kind: "info", text: "Sync-Einstellungen gespeichert. Ausgeschlossene Ordner werden beim nächsten Sync ignoriert." });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({ kind: "error", text: (data as { error?: string }).error ?? "Speichern fehlgeschlagen" });
+      }
+    } catch {
+      setFeedback({ kind: "error", text: "Speichern fehlgeschlagen" });
+    }
+    setSyncSettingsSaving(false);
+  }
+
+  function toggleFolderExclusion(folderPath: string) {
+    setExcludedFolders((prev) =>
+      prev.includes(folderPath)
+        ? prev.filter((f) => f !== folderPath)
+        : [...prev, folderPath],
+    );
+  }
 
   async function readError(res: Response, fallback: string) {
     try {
@@ -556,6 +604,71 @@ export default function AccountsSettingsPage() {
               </button>
             </form>
           </section>
+
+          {/* Sync-Einstellungen: Ordner-Filter */}
+          {selectedId && (
+            <section className="mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!syncSettingsOpen) void loadSyncSettings(selectedId);
+                  setSyncSettingsOpen((v) => !v);
+                }}
+                className="glass-btn-dark w-full rounded-lg px-3 py-2 text-sm text-left"
+              >
+                {syncSettingsOpen ? "▼" : "▶"} Sync-Einstellungen (Ordner auswählen)
+              </button>
+              {syncSettingsOpen && (
+                <div className="glass mt-2 rounded-lg p-3 text-sm space-y-3">
+                  <p className="text-xs glass-text-secondary">
+                    Wähle aus, welche Ordner/Labels synchronisiert werden sollen.
+                    Nicht angehakte Ordner werden beim Sync übersprungen.
+                  </p>
+                  {syncSettingsLoading ? (
+                    <p className="text-xs glass-text-muted">Lade Ordner vom Server…</p>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto space-y-1">
+                      {availableFolders.map((folder) => {
+                        const isExcluded = excludedFolders.includes(folder.path);
+                        return (
+                          <label
+                            key={folder.path}
+                            className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-white/10 ${
+                              isExcluded ? "opacity-50" : ""
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!isExcluded}
+                              onChange={() => toggleFolderExclusion(folder.path)}
+                              className="accent-blue-500"
+                            />
+                            <span className={`text-xs ${isExcluded ? "line-through glass-text-muted" : "glass-text-primary"}`}>
+                              {folder.path}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {excludedFolders.length > 0 && (
+                    <p className="text-[11px] text-yellow-400">
+                      {excludedFolders.length} Ordner ausgeschlossen – diese werden nicht synchronisiert
+                      und bestehende Einträge werden entfernt.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void saveSyncSettings()}
+                    disabled={syncSettingsSaving}
+                    className="glass-btn-dark w-full rounded-lg px-3 py-2 text-sm disabled:opacity-50"
+                  >
+                    {syncSettingsSaving ? "Speichere…" : "Sync-Einstellungen speichern"}
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
         </div>
       </div>
     </main>

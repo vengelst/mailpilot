@@ -126,6 +126,7 @@ model MailAccount {
   smtpUsername          String?
   encryptedSmtpPassword String?
   smtpFromName          String?
+  excludedFolders       String[]     @default([])
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
   user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
