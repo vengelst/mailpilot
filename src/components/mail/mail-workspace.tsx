@@ -1738,11 +1738,11 @@ export function MailWorkspace() {
 
   function deleteFolderPrompt() {
     if (!selectedFolderPath) return;
-    if (
-      !window.confirm(
-        `Ordner "${selectedFolderPath}" wirklich löschen? Dies löscht den Ordner auf dem Mailserver.`,
-      )
-    ) {
+    const isGmail = selectedAccount?.imapHost?.includes("gmail.com") || selectedAccount?.imapHost?.includes("google.com");
+    const warning = isGmail
+      ? `Ordner "${selectedFolderPath}" löschen?\n\n⚠️ Gmail: Das Label wird entfernt, aber die E-Mails bleiben erhalten (unter "Alle Nachrichten" auffindbar).`
+      : `Ordner "${selectedFolderPath}" wirklich löschen?\n\n⚠️ ACHTUNG: Bei diesem Provider (${selectedAccount?.imapHost ?? "IMAP"}) werden die E-Mails im Ordner möglicherweise unwiderruflich gelöscht!`;
+    if (!window.confirm(warning)) {
       return;
     }
     void manageFolder("delete", { path: selectedFolderPath });
