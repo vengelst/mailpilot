@@ -1388,6 +1388,7 @@ export function MailWorkspace() {
       });
       const suggestion = suggestRes.ok ? await suggestRes.json() : null;
 
+      const targetFolder = senderPromptFolder || "INBOX";
       await fetch("/api/sender-profiles", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1395,10 +1396,26 @@ export function MailWorkspace() {
           profileName: suggestion?.profileName ?? (senderPromptData.fromName || senderPromptData.email.split("@")[0]),
           patterns: suggestion?.patterns ?? [senderPromptData.domain || senderPromptData.email],
           category: senderPromptCategory,
-          targetFolder: senderPromptFolder || "INBOX",
+          targetFolder,
         }),
       });
       setUiInfo(`Absender-Profil für ${senderPromptData.domain || senderPromptData.email} erstellt.`);
+
+      if (targetFolder && targetFolder !== "INBOX") {
+        const domain = senderPromptData.domain;
+        const matchingEmails = emails.filter(
+          (e) => e.fromEmail && (e.fromEmail === senderPromptData.email || (domain && e.fromEmail.endsWith(`@${domain}`)))
+            && e.folderPath === "INBOX",
+        );
+        if (matchingEmails.length > 0) {
+          const ids = matchingEmails.map((e) => e.id);
+          setEmails((prev) => prev.filter((e) => !ids.includes(e.id)));
+          if (selectedEmail && ids.includes(selectedEmail.id)) {
+            setSelectedEmail(null);
+          }
+          void runBulk("move_folder", { targetFolder }, ids);
+        }
+      }
     } catch {
       setUiError("Absender-Profil konnte nicht erstellt werden.");
     } finally {
