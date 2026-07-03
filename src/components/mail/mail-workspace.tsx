@@ -759,6 +759,7 @@ export function MailWorkspace() {
   // --- Auto-move toast (Feature 2) ---
   const [autoMoveToast, setAutoMoveToast] = useState<{ emailId: string; folder: string } | null>(null);
   const autoMoveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAutoMoveRef = useRef<{ emailId: string; folder: string } | null>(null);
 
   const composeEditorRef = useRef<HTMLDivElement | null>(null);
   const mailBodyIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -1931,6 +1932,18 @@ export function MailWorkspace() {
   }
 
   async function loadEmail(id: string) {
+    if (pendingAutoMoveRef.current && pendingAutoMoveRef.current.emailId !== id) {
+      const { emailId: moveId, folder } = pendingAutoMoveRef.current;
+      pendingAutoMoveRef.current = null;
+      setEmails((prev) => prev.filter((e) => e.id !== moveId));
+      if (autoMoveToastTimerRef.current) clearTimeout(autoMoveToastTimerRef.current);
+      setAutoMoveToast({ emailId: moveId, folder });
+      autoMoveToastTimerRef.current = setTimeout(() => {
+        setAutoMoveToast(null);
+        autoMoveToastTimerRef.current = null;
+      }, 5000);
+      void reloadFolders();
+    }
     const requestId = ++activeLoadEmailRequestIdRef.current;
     setIsLoadingDetail(true);
     setEmailDetailMenuOpen(false);
@@ -1975,15 +1988,7 @@ export function MailWorkspace() {
             if (!res.ok) return;
             const mrData = await res.json().catch(() => ({}));
             if (mrData.movedTo) {
-              if (autoMoveToastTimerRef.current) clearTimeout(autoMoveToastTimerRef.current);
-              setAutoMoveToast({ emailId: id, folder: mrData.movedTo });
-              autoMoveToastTimerRef.current = setTimeout(() => {
-                setAutoMoveToast(null);
-                autoMoveToastTimerRef.current = null;
-              }, 5000);
-              setEmails((prev) => prev.filter((e) => e.id !== id));
-              setSelectedEmail((prev) => (prev?.id === id ? null : prev));
-              void reloadFolders();
+              pendingAutoMoveRef.current = { emailId: id, folder: mrData.movedTo };
             }
           })
           .catch(() => {});
