@@ -57,22 +57,7 @@ export async function POST(
       if (matchedProfile && matchedProfile.targetFolder) {
         try {
           await moveIndexedEmail(id, session.userId, matchedProfile.targetFolder);
-
-          const mergedLabels =
-            matchedProfile.autoLabels.length > 0
-              ? [...new Set([...(email.labels || []), ...matchedProfile.autoLabels])]
-              : email.labels || [];
-
-          await prisma.emailIndex.update({
-            where: { id },
-            data: {
-              folderPath: matchedProfile.targetFolder,
-              ...(matchedProfile.autoLabels.length > 0
-                ? { labels: mergedLabels }
-                : {}),
-            },
-          });
-
+          await prisma.emailIndex.delete({ where: { id } });
           return ok({ ok: true, movedTo: matchedProfile.targetFolder });
         } catch {
           return ok({ ok: true });

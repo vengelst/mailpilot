@@ -40,10 +40,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   for (const email of matching) {
     try {
       await moveIndexedEmail(email.id, session.userId, profile.targetFolder);
-      await prisma.emailIndex.update({
-        where: { id: email.id },
-        data: { folderPath: profile.targetFolder },
-      });
+      await prisma.emailIndex.delete({ where: { id: email.id } });
       moved++;
     } catch (err) {
       errorDetails.push({
