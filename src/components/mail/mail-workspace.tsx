@@ -2018,37 +2018,9 @@ export function MailWorkspace() {
     }
     if (emailData) {
       void checkSenderOnOpen(emailData);
-      const wasUnread = !(emailData.flags ?? []).includes("\\Seen");
-      if (wasUnread) {
-        void checkRulesOnOpen(emailData.id);
-      }
     }
   }
 
-  async function checkRulesOnOpen(emailId: string) {
-    try {
-      const res = await fetch(`/api/emails/${emailId}/check-rules`, { method: "POST" });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.labelsAdded && data.labelsAdded.length > 0) {
-        const labelNames = (data.labelsAdded as string[]).join(", ");
-        setUiInfo(`Label "${labelNames}" zugewiesen`);
-        setTimeout(() => setUiInfo(""), 4000);
-        setSelectedEmail((prev: Email | null) =>
-          prev?.id === emailId
-            ? { ...prev, labels: [...(prev.labels ?? []), ...data.labelsAdded] }
-            : prev,
-        );
-        setEmails((prev) =>
-          prev.map((e) =>
-            e.id === emailId
-              ? { ...e, labels: [...(e.labels ?? []), ...data.labelsAdded] }
-              : e,
-          ),
-        );
-      }
-    } catch { /* fire-and-forget */ }
-  }
 
   async function loadBody(id: string, force?: boolean) {
     setIsLoadingBody(true);

@@ -176,16 +176,15 @@ export async function applyBlockedSenderPoliciesForEmail(ctx: { userId: string; 
 
 async function applyRuleAction(action: RuleAction, userId: string, emailId: string) {
   if (action.type === "add_label") {
-    const email = await prisma.emailIndex.findUnique({
-      where: { id: emailId },
-      select: { labels: true },
-    });
-    if (email && !email.labels.includes(action.value)) {
-      await prisma.emailIndex.update({
-        where: { id: emailId },
-        data: { labels: [...email.labels, action.value] },
-      });
-    }
+    await prisma.$executeRaw`
+      UPDATE "EmailIndex"
+      SET "labels" = CASE
+        WHEN NOT ("labels" @> ARRAY[${action.value}]::text[])
+        THEN array_append("labels", ${action.value})
+        ELSE "labels"
+      END
+      WHERE "id" = ${emailId}
+    `;
     return { type: action.type, label: action.value };
   }
 
