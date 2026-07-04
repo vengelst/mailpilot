@@ -290,20 +290,32 @@ function FolderTreeRow({
           } ${!isActive && !selectable ? "italic glass-text-muted hover:bg-white/20 rounded-lg" : ""}`}
           title={node.path}
         >
-          <span className="truncate">{node.segment}</span>
+          <span className="flex items-center gap-1.5 truncate">
+            {!isActive && unread > 0 ? (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+            ) : null}
+            <span className="truncate">{node.segment}</span>
+          </span>
           {selectable ? (
-            <span
-              className={`shrink-0 max-w-[9.5rem] truncate whitespace-nowrap text-[10px] tabular-nums sm:text-xs ${
-                isActive ? "text-white/80" : "glass-text-muted"
-              }`}
-              aria-label={folderCountTitle}
-              title={folderCountTitle}
-            >
-              {total > 0
-                ? countDisplayMode === "uga"
-                  ? `U ${unread} · G ${read} · A ${total}`
-                  : `U ${unread} · A ${total}`
-                : ""}
+            <span className="flex shrink-0 items-center gap-1.5">
+              {!isActive && unread > 0 ? (
+                <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white tabular-nums">
+                  {unread}
+                </span>
+              ) : null}
+              <span
+                className={`max-w-[7rem] truncate whitespace-nowrap text-[10px] tabular-nums sm:text-xs ${
+                  isActive ? "text-white/80" : "glass-text-muted"
+                }`}
+                aria-label={folderCountTitle}
+                title={folderCountTitle}
+              >
+                {total > 0
+                  ? countDisplayMode === "uga"
+                    ? `${isActive && unread > 0 ? `U ${unread} · ` : ""}G ${read} · A ${total}`
+                    : `${isActive && unread > 0 ? `U ${unread} · ` : ""}A ${total}`
+                  : ""}
+              </span>
             </span>
           ) : null}
         </button>
