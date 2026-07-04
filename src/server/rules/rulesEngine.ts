@@ -37,16 +37,19 @@ function stringOp(left: string, operator: "equals" | "contains" | "endsWith", ri
   return a.includes(b);
 }
 
+export type RuleEmail = {
+  fromEmail?: string | null;
+  subject?: string | null;
+  hasAttachments: boolean;
+  aiCategory?: string | null;
+  aiPriority?: string | null;
+  aiKeywords: string[];
+  attachmentFilenames?: string[];
+};
+
 function evaluateLeaf(
   condition: Exclude<RuleConditionNode, { all?: RuleConditionNode[]; any?: RuleConditionNode[] }>,
-  email: {
-    fromEmail?: string | null;
-    subject?: string | null;
-    hasAttachments: boolean;
-    aiCategory?: string | null;
-    aiPriority?: string | null;
-    aiKeywords: string[];
-  },
+  email: RuleEmail,
 ): boolean {
   switch (condition.field) {
     case "fromEmail":
@@ -57,6 +60,10 @@ function evaluateLeaf(
       return stringOp(email.subject ?? "", "contains", condition.value);
     case "hasAttachments":
       return email.hasAttachments === condition.value;
+    case "attachmentFilename":
+      return (email.attachmentFilenames ?? []).some((filename) =>
+        stringOp(filename, condition.operator, condition.value),
+      );
     case "aiCategory":
       return stringOp(email.aiCategory ?? "", condition.operator, condition.value);
     case "aiPriority":
@@ -70,14 +77,7 @@ function evaluateLeaf(
 
 function evaluateNode(
   node: RuleConditionNode,
-  email: {
-    fromEmail?: string | null;
-    subject?: string | null;
-    hasAttachments: boolean;
-    aiCategory?: string | null;
-    aiPriority?: string | null;
-    aiKeywords: string[];
-  },
+  email: RuleEmail,
 ): boolean {
   if ("field" in node) {
     return evaluateLeaf(node, email);
@@ -90,14 +90,7 @@ function evaluateNode(
 
 export function evaluateRuleCondition(
   condition: RuleCondition,
-  email: {
-    fromEmail?: string | null;
-    subject?: string | null;
-    hasAttachments: boolean;
-    aiCategory?: string | null;
-    aiPriority?: string | null;
-    aiKeywords: string[];
-  },
+  email: RuleEmail,
 ): boolean {
   const allMatched = condition.all ? condition.all.every((node) => evaluateNode(node, email)) : true;
   const anyMatched = condition.any ? condition.any.some((node) => evaluateNode(node, email)) : true;
@@ -182,6 +175,20 @@ export async function applyBlockedSenderPoliciesForEmail(ctx: { userId: string; 
 }
 
 async function applyRuleAction(action: RuleAction, userId: string, emailId: string) {
+  if (action.type === "add_label") {
+    const email = await prisma.emailIndex.findUnique({
+      where: { id: emailId },
+      select: { labels: true },
+    });
+    if (email && !email.labels.includes(action.value)) {
+      await prisma.emailIndex.update({
+        where: { id: emailId },
+        data: { labels: [...email.labels, action.value] },
+      });
+    }
+    return { type: action.type, label: action.value };
+  }
+
   if (action.type === "set_category") {
     await prisma.emailIndex.update({
       where: { id: emailId },
@@ -253,11 +260,21 @@ export async function applyRulesForEmail(ctx: RuleContext) {
       aiCategory: true,
       aiPriority: true,
       aiKeywords: true,
+      attachments: {
+        select: { filename: true },
+      },
     },
   });
   if (!email) {
     throw new Error("Email not found");
   }
+
+  const emailForRules: RuleEmail & { id: string; accountId: string; folderPath: string } = {
+    ...email,
+    attachmentFilenames: email.attachments
+      .map((a) => a.filename)
+      .filter((f): f is string => !!f),
+  };
 
   if (!ctx.skipBlockedSender) {
     await applyBlockedSenderPoliciesForEmail({
@@ -280,7 +297,7 @@ export async function applyRulesForEmail(ctx: RuleContext) {
     if (!parsedCondition.success || !parsedAction.success) {
       await writeAuditLog({
         userId: ctx.userId,
-        accountId: email.accountId,
+        accountId: emailForRules.accountId,
         emailId: ctx.emailId,
         action: "rule.invalid",
         actor: "rule",
@@ -293,11 +310,11 @@ export async function applyRulesForEmail(ctx: RuleContext) {
       continue;
     }
 
-    const matched = evaluateRuleCondition(parsedCondition.data, email);
+    const matched = evaluateRuleCondition(parsedCondition.data, emailForRules);
     if (!matched) {
       await writeAuditLog({
         userId: ctx.userId,
-        accountId: email.accountId,
+        accountId: emailForRules.accountId,
         emailId: ctx.emailId,
         action: "rule.checked",
         actor: "rule",
@@ -316,7 +333,7 @@ export async function applyRulesForEmail(ctx: RuleContext) {
     appliedRules += 1;
     await writeAuditLog({
       userId: ctx.userId,
-      accountId: email.accountId,
+      accountId: emailForRules.accountId,
       emailId: ctx.emailId,
       action: "rule.applied",
       actor: "rule",

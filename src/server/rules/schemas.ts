@@ -5,6 +5,7 @@ const ruleFieldSchema = z.enum([
   "fromDomain",
   "subject",
   "hasAttachments",
+  "attachmentFilename",
   "aiCategory",
   "aiPriority",
   "keywords",
@@ -36,9 +37,17 @@ const subjectConditionSchema = z
   })
   .strict();
 
+const attachmentFilenameConditionSchema = z
+  .object({
+    field: z.literal("attachmentFilename"),
+    operator: z.enum(["contains", "endsWith"]),
+    value: z.string().min(1),
+  })
+  .strict();
+
 const stringBasedConditionSchema = z
   .object({
-    field: ruleFieldSchema.exclude(["fromDomain", "hasAttachments", "subject"]),
+    field: ruleFieldSchema.exclude(["fromDomain", "hasAttachments", "subject", "attachmentFilename"]),
     operator: stringOperatorSchema,
     value: z.string().min(1),
   })
@@ -48,6 +57,7 @@ export const ruleLeafConditionSchema = z.union([
   fromDomainConditionSchema,
   hasAttachmentsConditionSchema,
   subjectConditionSchema,
+  attachmentFilenameConditionSchema,
   stringBasedConditionSchema,
 ]);
 
@@ -86,6 +96,7 @@ export const ruleConditionSchema = z
   });
 
 export const ruleActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("add_label"), value: z.string().min(1) }).strict(),
   z.object({ type: z.literal("set_category"), value: z.string().min(1) }).strict(),
   z.object({ type: z.literal("set_priority"), value: z.enum(["low", "normal", "high", "urgent"]) }).strict(),
   z.object({ type: z.literal("move_folder"), value: z.string().min(1) }).strict(),

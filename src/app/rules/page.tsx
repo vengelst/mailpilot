@@ -54,6 +54,7 @@ const FIELD_OPTIONS: { value: string; label: string }[] = [
   { value: "aiPriority", label: "KI-Priorität" },
   { value: "keywords", label: "Schlüsselwörter" },
   { value: "hasAttachments", label: "Hat Anhänge" },
+  { value: "attachmentFilename", label: "Anhang-Dateiname" },
 ];
 
 const OPERATOR_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -76,9 +77,14 @@ const OPERATOR_OPTIONS: Record<string, { value: string; label: string }[]> = {
     { value: "contains", label: "enthält" },
   ],
   hasAttachments: [{ value: "equals", label: "ist gleich" }],
+  attachmentFilename: [
+    { value: "contains", label: "enthält" },
+    { value: "endsWith", label: "endet mit" },
+  ],
 };
 
 const ACTION_OPTIONS: { value: string; label: string; needsValue: boolean }[] = [
+  { value: "add_label", label: "Label zuweisen", needsValue: true },
   { value: "move_folder", label: "In Ordner verschieben", needsValue: true },
   { value: "set_category", label: "Kategorie setzen", needsValue: true },
   { value: "set_priority", label: "Priorität setzen", needsValue: true },
@@ -265,6 +271,16 @@ function ActionRow({
         </select>
       )}
 
+      {actionDef?.needsValue && action.type === "add_label" && (
+        <input
+          type="text"
+          className="glass rounded-lg px-3 py-2 text-sm glass-text-primary flex-1 min-w-[120px]"
+          placeholder="Label-Name"
+          value={action.value ?? ""}
+          onChange={(e) => onChange(index, { ...action, value: e.target.value })}
+        />
+      )}
+
       {actionDef?.needsValue && action.type === "set_category" && (
         <input
           type="text"
@@ -342,6 +358,14 @@ export default function RulesPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Invoice templates
+  const [invoiceSetupLoading, setInvoiceSetupLoading] = useState(false);
+  const [invoiceSetupDone, setInvoiceSetupDone] = useState(false);
+
+  // Retroactive scan
+  const [retroactiveLoading, setRetroactiveLoading] = useState<string | null>(null);
+  const [retroactiveResult, setRetroactiveResult] = useState<{ ruleId: string; processed: number; matched: number; labelsAdded: number } | null>(null);
 
   const loadRules = useCallback(async () => {
     setLoading(true);
@@ -552,6 +576,120 @@ export default function RulesPage() {
     }
   }
 
+  async function setupInvoiceTemplates() {
+    setInvoiceSetupLoading(true);
+    setError("");
+    try {
+      const labelRes = await fetch("/api/labels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Rechnungen", color: "#059669" }),
+      });
+      if (!labelRes.ok && labelRes.status !== 409) {
+        const data = await labelRes.json();
+        setError(data.error ?? "Label konnte nicht erstellt werden");
+        return;
+      }
+
+      const templates = [
+        {
+          name: "Rechnung im Betreff",
+          priority: 50,
+          active: true,
+          conditionJson: {
+            any: [
+              { field: "subject", operator: "contains", value: "Rechnung" },
+              { field: "subject", operator: "contains", value: "Invoice" },
+              { field: "subject", operator: "contains", value: "Zahlungsaufforderung" },
+            ],
+          },
+          actionJson: {
+            actions: [{ type: "add_label", value: "Rechnungen" }],
+            stopAfterMatch: false,
+          },
+        },
+        {
+          name: "Rechnung als Anhang",
+          priority: 51,
+          active: true,
+          conditionJson: {
+            all: [
+              { field: "hasAttachments", operator: "equals", value: true },
+              {
+                any: [
+                  { field: "attachmentFilename", operator: "contains", value: "rechnung" },
+                  { field: "attachmentFilename", operator: "contains", value: "invoice" },
+                ],
+              },
+            ],
+          },
+          actionJson: {
+            actions: [{ type: "add_label", value: "Rechnungen" }],
+            stopAfterMatch: false,
+          },
+        },
+        {
+          name: "KI: Rechnung erkannt",
+          priority: 52,
+          active: true,
+          conditionJson: {
+            any: [
+              { field: "aiCategory", operator: "equals", value: "invoice" },
+              { field: "aiCategory", operator: "equals", value: "rechnung" },
+            ],
+          },
+          actionJson: {
+            actions: [{ type: "add_label", value: "Rechnungen" }],
+            stopAfterMatch: false,
+          },
+        },
+      ];
+
+      for (const tpl of templates) {
+        await fetch("/api/rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(tpl),
+        });
+      }
+
+      setInvoiceSetupDone(true);
+      await loadRules();
+    } catch {
+      setError("Rechnungs-Vorlagen konnten nicht erstellt werden.");
+    } finally {
+      setInvoiceSetupLoading(false);
+    }
+  }
+
+  async function applyRetroactive(ruleId: string) {
+    setRetroactiveLoading(ruleId);
+    setRetroactiveResult(null);
+    try {
+      const res = await fetch("/api/rules/apply-retroactive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleIds: [ruleId] }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Retroaktiver Scan fehlgeschlagen");
+        return;
+      }
+      const data = await res.json();
+      setRetroactiveResult({ ruleId, ...data });
+    } catch {
+      setError("Retroaktiver Scan fehlgeschlagen");
+    } finally {
+      setRetroactiveLoading(null);
+    }
+  }
+
+  function hasAddLabelAction(rule: RuleRow): boolean {
+    const act = rule.actionJson as { actions?: RuleActionItem[] } | null;
+    return (act?.actions ?? []).some((a) => a.type === "add_label");
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6 max-w-5xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
@@ -624,6 +762,35 @@ export default function RulesPage() {
               Schließen
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Invoice Templates */}
+      {!invoiceSetupDone && (
+        <div className="glass rounded-xl p-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1">
+              <h2 className="text-sm font-semibold glass-text-primary">Rechnungs-Erkennung</h2>
+              <p className="text-xs glass-text-secondary mt-1">
+                Erstellt automatisch Label und Regeln zur Erkennung von Rechnungen im Betreff, Anhang oder per KI-Kategorie.
+              </p>
+            </div>
+            <button
+              onClick={setupInvoiceTemplates}
+              disabled={invoiceSetupLoading}
+              className="glass-btn px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 whitespace-nowrap"
+            >
+              {invoiceSetupLoading ? "Wird eingerichtet…" : "Rechnungs-Erkennung einrichten"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {invoiceSetupDone && (
+        <div className="glass rounded-xl p-4 mb-6">
+          <p className="text-sm text-emerald-400">
+            Rechnungs-Erkennung eingerichtet — Label &quot;Rechnungen&quot; und 3 Regeln wurden erstellt.
+          </p>
         </div>
       )}
 
@@ -829,6 +996,13 @@ export default function RulesPage() {
         </div>
       ) : (
         <div className="space-y-2">
+          {retroactiveResult && (
+            <div className="glass rounded-xl p-3 mb-2">
+              <p className="text-sm text-emerald-400">
+                Retroaktiver Scan abgeschlossen: {retroactiveResult.processed} E-Mails geprüft, {retroactiveResult.matched} Treffer, {retroactiveResult.labelsAdded} Labels zugewiesen.
+              </p>
+            </div>
+          )}
           {rules.map((rule) => (
             <div key={rule.id} className="glass rounded-xl p-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -844,7 +1018,17 @@ export default function RulesPage() {
                   </div>
                   <RuleDescription conditionJson={rule.conditionJson} actionJson={rule.actionJson} />
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 shrink-0 flex-wrap">
+                  {hasAddLabelAction(rule) && (
+                    <button
+                      onClick={() => applyRetroactive(rule.id)}
+                      disabled={retroactiveLoading === rule.id}
+                      className="glass-btn px-2 py-1 rounded-lg text-xs text-emerald-400 hover:text-emerald-300"
+                      title="Label-Regel auf bestehende E-Mails anwenden"
+                    >
+                      {retroactiveLoading === rule.id ? "Scanne…" : "Auf bestehende anwenden"}
+                    </button>
+                  )}
                   <button
                     onClick={() => handleToggleActive(rule)}
                     className="glass-btn px-2 py-1 rounded-lg text-xs"
