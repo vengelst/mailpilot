@@ -717,6 +717,7 @@ export function MailWorkspace() {
   const [isBodyMaximized, setIsBodyMaximized] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const lastSelectedIdRef = useRef<string | null>(null);
+  const shiftHeldRef = useRef(false);
   const [emptyFolderModalOpen, setEmptyFolderModalOpen] = useState(false);
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
   const [attachmentPreviewOpen, setAttachmentPreviewOpen] = useState<Set<string>>(new Set());
@@ -1462,8 +1463,8 @@ export function MailWorkspace() {
     setSenderPromptData(null);
   }
 
-  function toggleSelected(id: string, shiftKey?: boolean) {
-    if (shiftKey && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
+  function toggleSelected(id: string) {
+    if (shiftHeldRef.current && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
       const lastIdx = emails.findIndex((e) => e.id === lastSelectedIdRef.current);
       const curIdx = emails.findIndex((e) => e.id === id);
       if (lastIdx !== -1 && curIdx !== -1) {
@@ -2857,6 +2858,14 @@ export function MailWorkspace() {
     // Invalidate in-flight detail fetches when the visible mail context changes.
     activeLoadEmailRequestIdRef.current += 1;
   }, [selectedAccountId, selectedFolderPath, query, tab, sort, hasAttachmentsFilter, actionRequiredFilter]);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { shiftHeldRef.current = e.shiftKey; };
+    const up = (e: KeyboardEvent) => { shiftHeldRef.current = e.shiftKey; };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
 
   useEffect(() => {
     const root = listScrollRef.current;
@@ -4365,7 +4374,7 @@ export function MailWorkspace() {
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={(e) => toggleSelected(email.id, (e.nativeEvent as MouseEvent).shiftKey)}
+                            onChange={() => toggleSelected(email.id)}
                             aria-label="E-Mail auswählen"
                           />
                         </label>

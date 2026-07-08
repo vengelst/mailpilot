@@ -96,12 +96,21 @@ export default function SearchPage() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const lastSelectedIdRef = useRef<string | null>(null);
+  const shiftHeldRef = useRef(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [moveTarget, setMoveTarget] = useState("");
   const [openEmailId, setOpenEmailId] = useState<string | null>(null);
 
-  function toggleEmailSelected(id: string, shiftKey?: boolean) {
-    if (shiftKey && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { shiftHeldRef.current = e.shiftKey; };
+    const up = (e: KeyboardEvent) => { shiftHeldRef.current = e.shiftKey; };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
+
+  function toggleEmailSelected(id: string) {
+    if (shiftHeldRef.current && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
       const lastIdx = rows.findIndex((r) => r.id === lastSelectedIdRef.current);
       const curIdx = rows.findIndex((r) => r.id === id);
       if (lastIdx !== -1 && curIdx !== -1) {
@@ -670,7 +679,7 @@ export default function SearchPage() {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                onChange={(e) => toggleEmailSelected(row.id, (e.nativeEvent as MouseEvent).shiftKey)}
+                                onChange={() => toggleEmailSelected(row.id)}
                                 aria-label="Treffer auswählen"
                               />
                             </label>
