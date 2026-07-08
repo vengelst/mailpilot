@@ -4394,7 +4394,13 @@ export function MailWorkspace() {
                       </div>
                       <div className="flex min-w-0 flex-1 items-start gap-2 overflow-hidden">
                         <button
-                          onClick={() => loadEmail(email.id)}
+                          onClick={() => {
+                            if (shiftHeldRef.current) {
+                              toggleSelected(email.id);
+                              return;
+                            }
+                            loadEmail(email.id);
+                          }}
                           onDoubleClick={(e) => {
                             e.preventDefault();
                             setPopupEmailId(email.id);
