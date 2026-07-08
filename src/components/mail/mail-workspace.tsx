@@ -716,6 +716,7 @@ export function MailWorkspace() {
   const [printMode, setPrintMode] = useState<"html" | "text">("html");
   const [isBodyMaximized, setIsBodyMaximized] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastSelectedIdRef = useRef<string | null>(null);
   const [emptyFolderModalOpen, setEmptyFolderModalOpen] = useState(false);
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
   const [attachmentPreviewOpen, setAttachmentPreviewOpen] = useState<Set<string>>(new Set());
@@ -1461,13 +1462,29 @@ export function MailWorkspace() {
     setSenderPromptData(null);
   }
 
-  function toggleSelected(id: string) {
+  function toggleSelected(id: string, shiftKey?: boolean) {
+    if (shiftKey && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
+      const lastIdx = emails.findIndex((e) => e.id === lastSelectedIdRef.current);
+      const curIdx = emails.findIndex((e) => e.id === id);
+      if (lastIdx !== -1 && curIdx !== -1) {
+        const from = Math.min(lastIdx, curIdx);
+        const to = Math.max(lastIdx, curIdx);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          for (let i = from; i <= to; i++) next.add(emails[i].id);
+          return next;
+        });
+        lastSelectedIdRef.current = id;
+        return;
+      }
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    lastSelectedIdRef.current = id;
   }
   function toggleSelectAllVisible() {
     if (emails.length === 0) return;
@@ -4348,7 +4365,7 @@ export function MailWorkspace() {
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={() => toggleSelected(email.id)}
+                            onChange={(e) => toggleSelected(email.id, e.nativeEvent.shiftKey)}
                             aria-label="E-Mail auswählen"
                           />
                         </label>

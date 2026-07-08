@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EmailDetailModal } from "@/components/mail/email-detail-modal";
 
 type EmailRow = {
@@ -95,17 +95,34 @@ export default function SearchPage() {
   const [limit, setLimit] = useState<LimitOption>(100);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastSelectedIdRef = useRef<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [moveTarget, setMoveTarget] = useState("");
   const [openEmailId, setOpenEmailId] = useState<string | null>(null);
 
-  function toggleEmailSelected(id: string) {
+  function toggleEmailSelected(id: string, shiftKey?: boolean) {
+    if (shiftKey && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
+      const lastIdx = rows.findIndex((r) => r.id === lastSelectedIdRef.current);
+      const curIdx = rows.findIndex((r) => r.id === id);
+      if (lastIdx !== -1 && curIdx !== -1) {
+        const from = Math.min(lastIdx, curIdx);
+        const to = Math.max(lastIdx, curIdx);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          for (let i = from; i <= to; i++) next.add(rows[i].id);
+          return next;
+        });
+        lastSelectedIdRef.current = id;
+        return;
+      }
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    lastSelectedIdRef.current = id;
   }
   function toggleFolderGroupSelected(folderPath: string, groupRows: EmailRow[]) {
     const allInGroupSelected =
@@ -653,7 +670,7 @@ export default function SearchPage() {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                onChange={() => toggleEmailSelected(row.id)}
+                                onChange={(e) => toggleEmailSelected(row.id, e.nativeEvent.shiftKey)}
                                 aria-label="Treffer auswählen"
                               />
                             </label>
