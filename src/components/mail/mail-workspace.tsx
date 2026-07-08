@@ -4365,7 +4365,7 @@ export function MailWorkspace() {
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={(e) => toggleSelected(email.id, e.nativeEvent.shiftKey)}
+                            onChange={(e) => toggleSelected(email.id, (e.nativeEvent as MouseEvent).shiftKey)}
                             aria-label="E-Mail auswählen"
                           />
                         </label>

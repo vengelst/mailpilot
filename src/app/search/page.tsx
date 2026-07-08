@@ -670,7 +670,7 @@ export default function SearchPage() {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                onChange={(e) => toggleEmailSelected(row.id, e.nativeEvent.shiftKey)}
+                                onChange={(e) => toggleEmailSelected(row.id, (e.nativeEvent as MouseEvent).shiftKey)}
                                 aria-label="Treffer auswählen"
                               />
                             </label>
