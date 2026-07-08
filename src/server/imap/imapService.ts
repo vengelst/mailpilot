@@ -11,7 +11,8 @@ import {
   fetchMessagesByUidRange,
   getMailboxStatus,
   type ImapAccountConfig,
-  ImapMessageMeta,
+  type ImapMessageMeta,
+  type ImapSession,
   listImapFolders,
   moveMessage,
   moveMessageToSpecialFolder,
@@ -21,6 +22,7 @@ import {
   searchUidBySubjectDate,
   setMessageSeen,
   testImapConnection,
+  withImapSession,
 } from "@/server/imap/imapClient";
 
 /**
@@ -231,64 +233,78 @@ async function upsertFetchedMessages(
   folderPath: string,
   messages: ImapMessageMeta[],
 ): Promise<string[]> {
-  const emailIds: string[] = [];
-  for (const message of messages) {
-    const saved = await prisma.emailIndex.upsert({
-      where: {
-        accountId_folderPath_imapUid: {
-          accountId,
-          folderPath,
-          imapUid: message.uid,
-        },
-      },
-      update: {
-        messageId: message.messageId,
-        subject: message.subject,
-        fromName: message.fromName,
-        fromEmail: message.fromEmail,
-        toEmails: message.toEmails,
-        ccEmails: message.ccEmails,
-        date: message.date,
-        snippet: message.snippet,
-        textPreview: message.textPreview,
-        hasAttachments: message.hasAttachments,
-        attachmentCount: message.attachmentCount,
-        flags: message.flags,
-        size: message.size,
-      },
-      create: {
-        accountId,
-        folderPath,
-        imapUid: message.uid,
-        messageId: message.messageId,
-        subject: message.subject,
-        fromName: message.fromName,
-        fromEmail: message.fromEmail,
-        toEmails: message.toEmails,
-        ccEmails: message.ccEmails,
-        date: message.date,
-        snippet: message.snippet,
-        textPreview: message.textPreview,
-        hasAttachments: message.hasAttachments,
-        attachmentCount: message.attachmentCount,
-        flags: message.flags,
-        size: message.size,
-      },
-      select: { id: true },
-    });
-    emailIds.push(saved.id);
+  if (messages.length === 0) return [];
 
-    await prisma.emailAttachment.deleteMany({ where: { emailId: saved.id } });
-    if (message.attachments.length > 0) {
-      await prisma.emailAttachment.createMany({
-        data: message.attachments.map((attachment) => ({
-          emailId: saved.id,
-          filename: attachment.filename,
-          mimeType: attachment.mimeType,
-          size: attachment.size,
-          imapPartId: attachment.partId,
-        })),
-      });
+  const BATCH_SIZE = 50;
+  const emailIds: string[] = [];
+
+  for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+    const batch = messages.slice(i, i + BATCH_SIZE);
+    const results = await prisma.$transaction(
+      batch.map((message) =>
+        prisma.emailIndex.upsert({
+          where: {
+            accountId_folderPath_imapUid: {
+              accountId,
+              folderPath,
+              imapUid: message.uid,
+            },
+          },
+          update: {
+            messageId: message.messageId,
+            subject: message.subject,
+            fromName: message.fromName,
+            fromEmail: message.fromEmail,
+            toEmails: message.toEmails,
+            ccEmails: message.ccEmails,
+            date: message.date,
+            snippet: message.snippet,
+            textPreview: message.textPreview,
+            hasAttachments: message.hasAttachments,
+            attachmentCount: message.attachmentCount,
+            flags: message.flags,
+            size: message.size,
+          },
+          create: {
+            accountId,
+            folderPath,
+            imapUid: message.uid,
+            messageId: message.messageId,
+            subject: message.subject,
+            fromName: message.fromName,
+            fromEmail: message.fromEmail,
+            toEmails: message.toEmails,
+            ccEmails: message.ccEmails,
+            date: message.date,
+            snippet: message.snippet,
+            textPreview: message.textPreview,
+            hasAttachments: message.hasAttachments,
+            attachmentCount: message.attachmentCount,
+            flags: message.flags,
+            size: message.size,
+          },
+          select: { id: true },
+        }),
+      ),
+    );
+    const batchIds = results.map((r) => r.id);
+    emailIds.push(...batchIds);
+
+    // Batch attachment handling
+    await prisma.emailAttachment.deleteMany({
+      where: { emailId: { in: batchIds } },
+    });
+    const allAttachments = batch.flatMap((message, idx) =>
+      message.attachments.map((att) => ({
+        emailId: batchIds[idx],
+        filename: att.filename ?? null,
+        mimeType: att.mimeType ?? null,
+        size: att.size ?? null,
+        imapPartId: att.partId ?? null,
+      })),
+    );
+    if (allAttachments.length > 0) {
+      await prisma.emailAttachment.createMany({ data: allAttachments });
     }
   }
   return emailIds;
@@ -340,39 +356,46 @@ export async function syncFolderEmailsFull(
     const { config } = await getAccountConfig(accountId, userId);
     const folderRow = await getOrCreateFolderRow(accountId, folderPath);
     const oldUidValidity = folderRow.uidValidity;
-    const status = await getMailboxStatus(config, folderPath);
 
     let totalUpserted = 0;
     let maxUid = BIG_ZERO;
     const emailIds: string[] = [];
-    await fetchFolderMessagesPaged(
-      config,
-      folderPath,
-      FULL_SYNC_BATCH_SIZE,
-      async (batch) => {
-        const ids = await upsertFetchedMessages(accountId, folderPath, batch);
-        emailIds.push(...ids);
-        for (const m of batch) if (m.uid > maxUid) maxUid = m.uid;
-        totalUpserted += batch.length;
-      },
-    );
+    let uidValidity = BIG_ZERO;
+    let exists = 0;
+
+    await withImapSession(config, async (session) => {
+      const status = await session.openMailbox(folderPath);
+      uidValidity = status.uidValidity;
+      exists = status.exists;
+
+      const { totalFetched, maxUid: sessionMaxUid } = await session.fetchMessagesPaged(
+        FULL_SYNC_BATCH_SIZE,
+        async (batch) => {
+          const ids = await upsertFetchedMessages(accountId, folderPath, batch);
+          emailIds.push(...ids);
+          totalUpserted += batch.length;
+        },
+      );
+      totalUpserted = totalFetched;
+      maxUid = sessionMaxUid;
+    });
 
     await prisma.mailFolder.upsert({
       where: { accountId_path: { accountId, path: folderPath } },
       update: {
-        uidValidity: status.uidValidity,
+        uidValidity,
         lastSeenUid: maxUid,
         lastSyncedAt: new Date(),
-        existsCount: status.exists,
+        existsCount: exists,
       },
       create: {
         accountId,
         path: folderPath,
         displayName: folderPath,
-        uidValidity: status.uidValidity,
+        uidValidity,
         lastSeenUid: maxUid,
         lastSyncedAt: new Date(),
-        existsCount: status.exists,
+        existsCount: exists,
       },
     });
 
@@ -387,7 +410,7 @@ export async function syncFolderEmailsFull(
       removedFromIndex: 0,
       uidValidityChanged: false,
       oldUidValidity: bigIntToString(oldUidValidity),
-      newUidValidity: bigIntToString(status.uidValidity),
+      newUidValidity: bigIntToString(uidValidity),
       lastSeenUid: maxUid.toString(),
     };
   });
@@ -410,40 +433,141 @@ export async function syncFolderEmailsIncremental(
   return withSyncLock(accountId, folderPath, async () => {
     const { config } = await getAccountConfig(accountId, userId);
     const folderRow = await getOrCreateFolderRow(accountId, folderPath);
-    const status = await getMailboxStatus(config, folderPath);
 
-    const storedUidValidity = folderRow.uidValidity;
-    const uidValidityChanged =
-      storedUidValidity !== null && storedUidValidity !== status.uidValidity;
+    return withImapSession(config, async (session) => {
+      const status = await session.openMailbox(folderPath);
 
-    if (uidValidityChanged) {
-      await prisma.emailIndex.deleteMany({ where: { accountId, folderPath } });
-      await prisma.mailFolder.update({
-        where: { id: folderRow.id },
-        data: { uidValidity: status.uidValidity, lastSeenUid: BIG_ZERO },
-      });
-      // Real full rebuild — paged, no 100-cap.
-      // Run inline (lock is already held by this outer call; the inner
-      // syncFolderEmailsFull would deadlock if it also tried to acquire). To
-      // avoid that we replicate the full-rebuild logic here without re-locking.
-      let totalUpserted = 0;
-      let maxUid = BIG_ZERO;
-      const emailIds: string[] = [];
-      await fetchFolderMessagesPaged(
-        config,
-        folderPath,
-        FULL_SYNC_BATCH_SIZE,
-        async (batch) => {
-          const ids = await upsertFetchedMessages(accountId, folderPath, batch);
-          emailIds.push(...ids);
-          for (const m of batch) if (m.uid > maxUid) maxUid = m.uid;
-          totalUpserted += batch.length;
-        },
-      );
+      const storedUidValidity = folderRow.uidValidity;
+      const uidValidityChanged =
+        storedUidValidity !== null && storedUidValidity !== status.uidValidity;
+
+      if (uidValidityChanged) {
+        await prisma.emailIndex.deleteMany({ where: { accountId, folderPath } });
+        await prisma.mailFolder.update({
+          where: { id: folderRow.id },
+          data: { uidValidity: status.uidValidity, lastSeenUid: BIG_ZERO },
+        });
+
+        let totalUpserted = 0;
+        let maxUid = BIG_ZERO;
+        const emailIds: string[] = [];
+        const { totalFetched, maxUid: sessionMaxUid } = await session.fetchMessagesPaged(
+          FULL_SYNC_BATCH_SIZE,
+          async (batch) => {
+            const ids = await upsertFetchedMessages(accountId, folderPath, batch);
+            emailIds.push(...ids);
+            totalUpserted += batch.length;
+          },
+        );
+        totalUpserted = totalFetched;
+        maxUid = sessionMaxUid;
+
+        await prisma.mailFolder.update({
+          where: { id: folderRow.id },
+          data: {
+            lastSeenUid: maxUid,
+            lastSyncedAt: new Date(),
+            existsCount: status.exists,
+          },
+        });
+
+        return {
+          accountId,
+          folderPath,
+          mode: "incremental" as const,
+          synced: totalUpserted,
+          emailIds,
+          newMails: totalUpserted,
+          flagsUpdated: 0,
+          removedFromIndex: 0,
+          uidValidityChanged: true,
+          oldUidValidity: bigIntToString(storedUidValidity),
+          newUidValidity: bigIntToString(status.uidValidity),
+          lastSeenUid: maxUid.toString(),
+        };
+      }
+
+      const lastSeenUid = folderRow.lastSeenUid;
+      let newMessages: ImapMessageMeta[] = [];
+      if (status.exists > 0) {
+        const nextUid = lastSeenUid + BIG_ONE;
+        const range = `${nextUid.toString()}:*`;
+        newMessages = await session.fetchNewMessages(range);
+        if (lastSeenUid > BIG_ZERO) {
+          newMessages = newMessages.filter((m) => m.uid > lastSeenUid);
+        }
+      }
+      const newEmailIds = await upsertFetchedMessages(accountId, folderPath, newMessages);
+
+      let flagsUpdated = 0;
+      let removedFromIndex = 0;
+      if (lastSeenUid > BIG_ZERO) {
+        const flagRange = `1:${lastSeenUid.toString()}`;
+        const flagSnapshots =
+          status.exists > 0
+            ? await session.fetchFlags(flagRange)
+            : [];
+        const serverUids = new Set<bigint>(flagSnapshots.map((entry) => entry.uid));
+
+        const indexedRows = await prisma.emailIndex.findMany({
+          where: {
+            accountId,
+            folderPath,
+            imapUid: { lte: lastSeenUid },
+          },
+          select: { id: true, imapUid: true, flags: true },
+        });
+        const indexedByUid = new Map<bigint, (typeof indexedRows)[number]>(
+          indexedRows.map((row) => [row.imapUid, row]),
+        );
+
+        // Batch flag updates
+        const flagUpdates: Array<{ id: string; flags: string[] }> = [];
+        for (const snapshot of flagSnapshots) {
+          const existing = indexedByUid.get(snapshot.uid);
+          if (!existing) continue;
+          const beforeSorted = [...existing.flags].sort();
+          const afterSorted = [...snapshot.flags].sort();
+          const same =
+            beforeSorted.length === afterSorted.length &&
+            beforeSorted.every((flag, i) => flag === afterSorted[i]);
+          if (!same) {
+            flagUpdates.push({ id: existing.id, flags: snapshot.flags });
+          }
+        }
+        if (flagUpdates.length > 0) {
+          await prisma.$transaction(
+            flagUpdates.map(({ id, flags }) =>
+              prisma.emailIndex.update({ where: { id }, data: { flags } }),
+            ),
+          );
+          flagsUpdated = flagUpdates.length;
+        }
+
+        const goneIds = indexedRows
+          .filter((row) => !serverUids.has(row.imapUid))
+          .map((row) => row.id);
+        if (goneIds.length > 0) {
+          const deleted = await prisma.emailIndex.deleteMany({
+            where: {
+              accountId,
+              folderPath,
+              id: { in: goneIds },
+            },
+          });
+          removedFromIndex = deleted.count;
+        }
+      }
+
+      let nextLastSeenUid = lastSeenUid;
+      for (const m of newMessages) {
+        if (m.uid > nextLastSeenUid) nextLastSeenUid = m.uid;
+      }
       await prisma.mailFolder.update({
         where: { id: folderRow.id },
         data: {
-          lastSeenUid: maxUid,
+          uidValidity: status.uidValidity,
+          lastSeenUid: nextLastSeenUid,
           lastSyncedAt: new Date(),
           existsCount: status.exists,
         },
@@ -452,126 +576,18 @@ export async function syncFolderEmailsIncremental(
       return {
         accountId,
         folderPath,
-        mode: "incremental",
-        synced: totalUpserted,
-        emailIds,
-        newMails: totalUpserted,
-        flagsUpdated: 0,
-        removedFromIndex: 0,
-        uidValidityChanged: true,
+        mode: "incremental" as const,
+        synced: newMessages.length,
+        emailIds: newEmailIds,
+        newMails: newMessages.length,
+        flagsUpdated,
+        removedFromIndex,
+        uidValidityChanged: false,
         oldUidValidity: bigIntToString(storedUidValidity),
         newUidValidity: bigIntToString(status.uidValidity),
-        lastSeenUid: maxUid.toString(),
+        lastSeenUid: nextLastSeenUid.toString(),
       };
-    }
-
-    const lastSeenUid = folderRow.lastSeenUid; // bigint
-    let newMessages: ImapMessageMeta[] = [];
-    if (status.exists > 0) {
-      const nextUid = lastSeenUid + BIG_ONE;
-      const range = `${nextUid.toString()}:*`;
-      newMessages = await fetchMessagesByUidRange(config, folderPath, range);
-      if (lastSeenUid > BIG_ZERO) {
-        newMessages = newMessages.filter((m) => m.uid > lastSeenUid);
-      }
-    }
-    const newEmailIds = await upsertFetchedMessages(accountId, folderPath, newMessages);
-
-    let flagsUpdated = 0;
-    let removedFromIndex = 0;
-    if (lastSeenUid > BIG_ZERO) {
-      // Flag-refresh range covers every UID we have seen so far (`1:lastSeenUid`).
-      // PERFORMANCE NOTE: this is O(folder size) per incremental sync — the IMAP
-      // server returns only flags + uid (no source bytes), so it is cheap on the
-      // wire but can become noticeable on very large folders (>50k messages).
-      // For MVP scope this is accepted. If it ever becomes a bottleneck the
-      // mitigation is to time-box (e.g. only refresh flags for messages
-      // modified since `lastSyncedAt` via CONDSTORE/MODSEQ if the server
-      // advertises it) — that requires opt-in capability detection and is
-      // explicitly out of scope here.
-      const flagRange = `1:${lastSeenUid.toString()}`;
-      // Important for folders like Trash:
-      // if the server folder is currently empty (exists=0), we still must
-      // reconcile and drop stale local rows. In that case `serverUids` stays
-      // empty and all indexed rows become removal candidates.
-      const flagSnapshots =
-        status.exists > 0
-          ? await fetchFlagsByUidRange(config, folderPath, flagRange)
-          : [];
-      const serverUids = new Set<bigint>(flagSnapshots.map((entry) => entry.uid));
-
-      const indexedRows = await prisma.emailIndex.findMany({
-        where: {
-          accountId,
-          folderPath,
-          imapUid: { lte: lastSeenUid },
-        },
-        select: { id: true, imapUid: true, flags: true },
-      });
-      const indexedByUid = new Map<bigint, (typeof indexedRows)[number]>(
-        indexedRows.map((row) => [row.imapUid, row]),
-      );
-
-      for (const snapshot of flagSnapshots) {
-        const existing = indexedByUid.get(snapshot.uid);
-        if (!existing) continue;
-        const beforeSorted = [...existing.flags].sort();
-        const afterSorted = [...snapshot.flags].sort();
-        const same =
-          beforeSorted.length === afterSorted.length &&
-          beforeSorted.every((flag, i) => flag === afterSorted[i]);
-        if (!same) {
-          await prisma.emailIndex.update({
-            where: { id: existing.id },
-            data: { flags: snapshot.flags },
-          });
-          flagsUpdated += 1;
-        }
-      }
-
-      const goneIds = indexedRows
-        .filter((row) => !serverUids.has(row.imapUid))
-        .map((row) => row.id);
-      if (goneIds.length > 0) {
-        const deleted = await prisma.emailIndex.deleteMany({
-          where: {
-            accountId,
-            folderPath,
-            id: { in: goneIds },
-          },
-        });
-        removedFromIndex = deleted.count;
-      }
-    }
-
-    let nextLastSeenUid = lastSeenUid;
-    for (const m of newMessages) {
-      if (m.uid > nextLastSeenUid) nextLastSeenUid = m.uid;
-    }
-    await prisma.mailFolder.update({
-      where: { id: folderRow.id },
-      data: {
-        uidValidity: status.uidValidity,
-        lastSeenUid: nextLastSeenUid,
-        lastSyncedAt: new Date(),
-        existsCount: status.exists,
-      },
     });
-
-    return {
-      accountId,
-      folderPath,
-      mode: "incremental",
-      synced: newMessages.length,
-      emailIds: newEmailIds,
-      newMails: newMessages.length,
-      flagsUpdated,
-      removedFromIndex,
-      uidValidityChanged: false,
-      oldUidValidity: bigIntToString(storedUidValidity),
-      newUidValidity: bigIntToString(status.uidValidity),
-      lastSeenUid: nextLastSeenUid.toString(),
-    };
   });
 }
 

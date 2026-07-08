@@ -243,6 +243,196 @@ async function readBinaryPayload(value: unknown): Promise<Buffer | null> {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Shared IMAP Session — reuses a single TLS connection for multiple operations
+// ---------------------------------------------------------------------------
+
+export interface ImapSession {
+  openMailbox(folderPath: string): Promise<{ uidValidity: bigint; uidNext: bigint; exists: number }>;
+  fetchNewMessages(uidRange: string): Promise<ImapMessageMeta[]>;
+  fetchFlags(uidRange: string): Promise<Array<{ uid: bigint; flags: string[] }>>;
+  fetchMessagesPaged(
+    batchSize: number,
+    onBatch: (batch: ImapMessageMeta[]) => Promise<void>,
+  ): Promise<{ totalFetched: number; maxUid: bigint }>;
+}
+
+export async function withImapSession<T>(
+  config: ImapAccountConfig,
+  fn: (session: ImapSession) => Promise<T>,
+): Promise<T> {
+  const client = buildClient(config);
+  await client.connect();
+  try {
+    let currentMailboxExists = 0;
+
+    const session: ImapSession = {
+      async openMailbox(folderPath: string) {
+        const mailbox = (await client.mailboxOpen(folderPath)) as unknown as {
+          uidValidity?: number | bigint;
+          uidNext?: number | bigint;
+          exists?: number;
+        };
+        currentMailboxExists = Number(mailbox.exists ?? 0);
+        return {
+          uidValidity: toBigInt(mailbox.uidValidity),
+          uidNext: toBigInt(mailbox.uidNext),
+          exists: currentMailboxExists,
+        };
+      },
+
+      async fetchNewMessages(uidRange: string) {
+        if (!currentMailboxExists) return [];
+        const messages: ImapMessageMeta[] = [];
+        for await (const message of client.fetch(
+          uidRange,
+          {
+            uid: true,
+            envelope: true,
+            flags: true,
+            size: true,
+            bodyStructure: true,
+            source: true,
+          } as never,
+          { uid: true } as never,
+        )) {
+          const raw = message as unknown as {
+            uid: number;
+            envelope?: {
+              messageId?: string;
+              subject?: string;
+              from?: Array<{ name?: string; address?: string }>;
+              to?: Array<{ address?: string }>;
+              cc?: Array<{ address?: string }>;
+              date?: Date;
+            };
+            flags?: Set<string>;
+            size?: number;
+            source?: Buffer;
+            bodyStructure?: unknown;
+          };
+
+          const attachments = collectAttachments(raw.bodyStructure);
+          const envelope = raw.envelope;
+          const parsed = await parseMailSource(raw.source);
+          const textPreview = buildTextPreview(parsed.text, parsed.html);
+          messages.push({
+            uid: BigInt(raw.uid),
+            messageId: envelope?.messageId,
+            subject: envelope?.subject,
+            fromName: envelope?.from?.[0]?.name,
+            fromEmail: envelope?.from?.[0]?.address,
+            toEmails: envelope?.to?.map((x) => x.address || "").filter(Boolean) || [],
+            ccEmails: envelope?.cc?.map((x) => x.address || "").filter(Boolean) || [],
+            date: envelope?.date,
+            snippet: textPreview.slice(0, 140),
+            textPreview,
+            hasAttachments: attachments.length > 0,
+            attachmentCount: attachments.length,
+            flags: Array.from(raw.flags || []),
+            size: Number(raw.size || 0),
+            attachments,
+          });
+        }
+        return messages;
+      },
+
+      async fetchFlags(uidRange: string) {
+        if (!currentMailboxExists) return [];
+        const result: Array<{ uid: bigint; flags: string[] }> = [];
+        for await (const message of client.fetch(
+          uidRange,
+          { uid: true, flags: true } as never,
+          { uid: true } as never,
+        )) {
+          const raw = message as unknown as { uid: number | bigint; flags?: Set<string> };
+          result.push({
+            uid: BigInt(raw.uid),
+            flags: Array.from(raw.flags || []),
+          });
+        }
+        return result;
+      },
+
+      async fetchMessagesPaged(batchSize, onBatch) {
+        if (!currentMailboxExists) return { totalFetched: 0, maxUid: BigInt(0) };
+        let totalFetched = 0;
+        let maxUid = BigInt(0);
+
+        for (let start = 1; start <= currentMailboxExists; start += batchSize) {
+          const end = Math.min(start + batchSize - 1, currentMailboxExists);
+          const range = `${start}:${end}`;
+          const batch: ImapMessageMeta[] = [];
+
+          for await (const message of client.fetch(
+            range,
+            {
+              uid: true,
+              envelope: true,
+              flags: true,
+              size: true,
+              bodyStructure: true,
+              source: true,
+            } as never,
+            { uid: false } as never,
+          )) {
+            const raw = message as unknown as {
+              uid: number | bigint;
+              envelope?: {
+                messageId?: string;
+                subject?: string;
+                from?: Array<{ name?: string; address?: string }>;
+                to?: Array<{ address?: string }>;
+                cc?: Array<{ address?: string }>;
+                date?: Date;
+              };
+              flags?: Set<string>;
+              size?: number;
+              source?: Buffer;
+              bodyStructure?: unknown;
+            };
+
+            const attachments = collectAttachments(raw.bodyStructure);
+            const envelope = raw.envelope;
+            const parsed = await parseMailSource(raw.source);
+            const textPreview = buildTextPreview(parsed.text, parsed.html);
+            const uid = BigInt(raw.uid);
+            if (uid > maxUid) maxUid = uid;
+            batch.push({
+              uid,
+              messageId: envelope?.messageId,
+              subject: envelope?.subject,
+              fromName: envelope?.from?.[0]?.name,
+              fromEmail: envelope?.from?.[0]?.address,
+              toEmails: envelope?.to?.map((x) => x.address || "").filter(Boolean) || [],
+              ccEmails: envelope?.cc?.map((x) => x.address || "").filter(Boolean) || [],
+              date: envelope?.date,
+              snippet: textPreview.slice(0, 140),
+              textPreview,
+              hasAttachments: attachments.length > 0,
+              attachmentCount: attachments.length,
+              flags: Array.from(raw.flags || []),
+              size: Number(raw.size || 0),
+              attachments,
+            });
+          }
+
+          if (batch.length > 0) {
+            await onBatch(batch);
+            totalFetched += batch.length;
+          }
+        }
+
+        return { totalFetched, maxUid };
+      },
+    };
+
+    return await fn(session);
+  } finally {
+    if (client.usable) await client.logout();
+  }
+}
+
 export async function testImapConnection(config: ImapAccountConfig) {
   const client = buildClient(config);
   try {
