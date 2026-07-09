@@ -4219,64 +4219,16 @@ export function MailWorkspace() {
           </div>
 
           {selectedIds.size > 0 ? (
-            <div className="glass-info flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+            <div className="glass-info flex items-center gap-2 px-3 py-1.5 text-xs">
               <span className="font-medium">
                 {selectedIds.size} ausgewählt
               </span>
-              <button
-                disabled={bulkBusy}
-                onClick={() => void runBulk("mark_read")}
-                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
-              >
-                Gelesen
-              </button>
-              <button
-                disabled={bulkBusy}
-                onClick={() => void runBulk("mark_unread")}
-                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
-              >
-                Ungelesen
-              </button>
-              <button
-                disabled={bulkBusy}
-                onClick={() => void runBulk("move_trash")}
-                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
-              >
-                Papierkorb
-              </button>
-              <button
-                disabled={bulkBusy}
-                onClick={() => void runBulk("move_spam")}
-                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
-              >
-                Spam
-              </button>
-              <select
-                value={moveTargetFolder}
-                onChange={(e) => setMoveTargetFolder(e.target.value)}
-                className="glass-select rounded-lg px-2 py-1"
-              >
-                <option value="">Verschieben nach…</option>
-                {folders.map((f) => (
-                  <option key={f.path} value={f.path}>
-                    {f.displayName}
-                  </option>
-                ))}
-              </select>
-              <button
-                disabled={bulkBusy || !moveTargetFolder}
-                onClick={() =>
-                  void runBulk("move_folder", { targetFolder: moveTargetFolder })
-                }
-                className="glass-btn rounded-lg px-2 py-1 disabled:opacity-50"
-              >
-                Verschieben
-              </button>
+              <span className="glass-text-muted">— Rechtsklick für Aktionen</span>
               <button
                 onClick={clearSelection}
                 className="glass-btn ml-auto rounded-lg px-2 py-1"
               >
-                Auswahl aufheben
+                ✕ Aufheben
               </button>
             </div>
           ) : null}
@@ -5474,6 +5426,37 @@ export function MailWorkspace() {
               </>
             ) : null}
 
+            <div className="my-1 border-t border-gray-100" />
+
+            <button
+              className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-50"
+              onClick={() => {
+                if (contextMenuIsBulk) {
+                  void runBulk("mark_read", undefined, contextMenuTargetIds);
+                } else {
+                  void runActionForEmail(contextMenuEmail.id, `/api/emails/${contextMenuEmail.id}/mark-read`);
+                }
+                closeMailContextMenu();
+              }}
+            >
+              Als gelesen markieren
+            </button>
+            <button
+              className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-50"
+              onClick={() => {
+                if (contextMenuIsBulk) {
+                  void runBulk("mark_unread", undefined, contextMenuTargetIds);
+                } else {
+                  void runActionForEmail(contextMenuEmail.id, `/api/emails/${contextMenuEmail.id}/mark-unread`);
+                }
+                closeMailContextMenu();
+              }}
+            >
+              Als ungelesen markieren
+            </button>
+
+            <div className="my-1 border-t border-gray-100" />
+
             <button
               className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-50"
               onClick={() => {
@@ -5499,7 +5482,17 @@ export function MailWorkspace() {
               >
                 Als Spam lernen (Absender + Inhalt)
               </button>
-            ) : null}
+            ) : (
+              <button
+                className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-50"
+                onClick={() => {
+                  void runBulk("move_spam", undefined, contextMenuTargetIds);
+                  closeMailContextMenu();
+                }}
+              >
+                In Spam verschieben
+              </button>
+            )}
 
             <button
               className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-50"
