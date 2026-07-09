@@ -1604,7 +1604,7 @@ export function MailWorkspace() {
     setFolders(next);
     if (!next.length) {
       setSelectedFolderPath("");
-    } else if (!next.some((f) => f.path === selectedFolderPath)) {
+    } else if (!next.some((f) => f.path === selectedFolderPathRef.current)) {
       setSelectedFolderPath(next[0].path);
     }
     setMoveTargetFolder(next[0]?.path ?? "");
@@ -1824,8 +1824,8 @@ export function MailWorkspace() {
   function mailListSearchParams(cursor: string | null) {
     const params = new URLSearchParams();
     if (selectedAccountId && !isAllAccounts) {
-      params.set("accountId", selectedAccountId);
-      params.set("folder", selectedFolderPath);
+      params.set("accountId", selectedAccountIdRef.current || selectedAccountId);
+      params.set("folder", selectedFolderPathRef.current || selectedFolderPath);
     }
     params.set("sort", sort);
     params.set("limit", String(mailScrollBatchSize));
