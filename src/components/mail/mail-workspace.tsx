@@ -1463,8 +1463,9 @@ export function MailWorkspace() {
     setSenderPromptData(null);
   }
 
-  function toggleSelected(id: string) {
-    if (shiftHeldRef.current && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
+  function toggleSelected(id: string, shiftKey?: boolean) {
+    const isShift = shiftKey ?? shiftHeldRef.current;
+    if (isShift && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
       const lastIdx = emails.findIndex((e) => e.id === lastSelectedIdRef.current);
       const curIdx = emails.findIndex((e) => e.id === id);
       if (lastIdx !== -1 && curIdx !== -1) {
@@ -2862,9 +2863,11 @@ export function MailWorkspace() {
   useEffect(() => {
     const down = (e: KeyboardEvent) => { shiftHeldRef.current = e.shiftKey; };
     const up = (e: KeyboardEvent) => { shiftHeldRef.current = e.shiftKey; };
+    const blur = () => { shiftHeldRef.current = false; };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
-    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+    window.addEventListener("blur", blur);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", blur); };
   }, []);
 
   useEffect(() => {
@@ -4388,11 +4391,17 @@ export function MailWorkspace() {
                       }`}
                     >
                       <div className="mt-2 flex shrink-0 flex-col items-center gap-3 px-1" onClick={(e) => e.stopPropagation()}>
-                        <label className="flex cursor-pointer items-center">
+                        <label
+                          className="flex cursor-pointer items-center"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            toggleSelected(email.id, e.shiftKey);
+                          }}
+                        >
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={() => toggleSelected(email.id)}
+                            readOnly
                             aria-label="E-Mail auswählen"
                           />
                         </label>
@@ -4412,9 +4421,9 @@ export function MailWorkspace() {
                       </div>
                       <div className="flex min-w-0 flex-1 items-start gap-2 overflow-hidden">
                         <button
-                          onClick={() => {
-                            if (shiftHeldRef.current) {
-                              toggleSelected(email.id);
+                          onClick={(e) => {
+                            if (e.shiftKey) {
+                              toggleSelected(email.id, true);
                               return;
                             }
                             loadEmail(email.id);
