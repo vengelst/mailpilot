@@ -1,7 +1,7 @@
 import { aiResultSchema, AiAnalyzeInput, AiProvider, AiResult } from "@/server/ai/types";
 
 const OPENAI_MODEL = "gpt-4o-mini";
-const ANTHROPIC_MODEL = "claude-3-5-sonnet-latest";
+const ANTHROPIC_MODEL = "claude-sonnet-4-20250514";
 const ANTHROPIC_VERSION = "2023-06-01";
 
 const defaultMockResult: AiResult = {
@@ -112,9 +112,14 @@ function normalizeAndValidate(raw: unknown): AiResult {
     candidate.detectedContacts = candidate.detectedContacts.map((item) => {
       if (!item || typeof item !== "object") return item;
       const contact = item as Record<string, unknown>;
+      const cleaned: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(contact)) {
+        if (value === null) continue;
+        cleaned[key] = value;
+      }
       return {
-        ...contact,
-        confidence: toBoundedConfidence(contact.confidence, 0.5),
+        ...cleaned,
+        confidence: toBoundedConfidence(cleaned.confidence, 0.5),
       };
     });
   }

@@ -157,20 +157,33 @@ export async function runAutomationNow(userId: string, input: RunInput) {
             job: "aiClassificationJob",
             phase: "started",
           });
-          const aiResult = await runAiClassificationJob({
-            userId,
-            accountId,
-            emailIds: scopedEmailIds,
-          });
-          analyzed += aiResult.analyzedCount;
-          await writeJobAudit({
-            userId,
-            runId: run.id,
-            accountId,
-            job: "aiClassificationJob",
-            phase: "finished",
-            details: aiResult,
-          });
+          try {
+            const aiResult = await runAiClassificationJob({
+              userId,
+              accountId,
+              emailIds: scopedEmailIds,
+            });
+            analyzed += aiResult.analyzedCount;
+            await writeJobAudit({
+              userId,
+              runId: run.id,
+              accountId,
+              job: "aiClassificationJob",
+              phase: "finished",
+              details: aiResult,
+            });
+          } catch (aiError) {
+            await writeJobAudit({
+              userId,
+              runId: run.id,
+              accountId,
+              job: "aiClassificationJob",
+              phase: "failed",
+              details: {
+                error: aiError instanceof Error ? aiError.message : "AI classification failed",
+              },
+            });
+          }
         }
 
         await writeJobAudit({
@@ -180,17 +193,28 @@ export async function runAutomationNow(userId: string, input: RunInput) {
           job: "blockedSenderJob",
           phase: "started",
         });
-        const blockedResult = await runBlockedSenderJob({ userId, emailIds: scopedEmailIds });
-        blockedMatched += blockedResult.matched;
-        blockedMoved += blockedResult.moved;
-        await writeJobAudit({
-          userId,
-          runId: run.id,
-          accountId,
-          job: "blockedSenderJob",
-          phase: "finished",
-          details: blockedResult,
-        });
+        try {
+          const blockedResult = await runBlockedSenderJob({ userId, emailIds: scopedEmailIds });
+          blockedMatched += blockedResult.matched;
+          blockedMoved += blockedResult.moved;
+          await writeJobAudit({
+            userId,
+            runId: run.id,
+            accountId,
+            job: "blockedSenderJob",
+            phase: "finished",
+            details: blockedResult,
+          });
+        } catch (e) {
+          await writeJobAudit({
+            userId,
+            runId: run.id,
+            accountId,
+            job: "blockedSenderJob",
+            phase: "failed",
+            details: { error: e instanceof Error ? e.message : "Failed" },
+          });
+        }
 
         await writeJobAudit({
           userId,
@@ -199,21 +223,32 @@ export async function runAutomationNow(userId: string, input: RunInput) {
           job: "spamCheckJob",
           phase: "started",
         });
-        const spamResult = await runSpamCheckJob({
-          userId,
-          emailIds: scopedEmailIds,
-          aiMinConfidenceForSpam: settings.aiMinConfidenceForSpam,
-        });
-        spamFlagged += spamResult.flagged;
-        spamMoved += spamResult.moved;
-        await writeJobAudit({
-          userId,
-          runId: run.id,
-          accountId,
-          job: "spamCheckJob",
-          phase: "finished",
-          details: spamResult,
-        });
+        try {
+          const spamResult = await runSpamCheckJob({
+            userId,
+            emailIds: scopedEmailIds,
+            aiMinConfidenceForSpam: settings.aiMinConfidenceForSpam,
+          });
+          spamFlagged += spamResult.flagged;
+          spamMoved += spamResult.moved;
+          await writeJobAudit({
+            userId,
+            runId: run.id,
+            accountId,
+            job: "spamCheckJob",
+            phase: "finished",
+            details: spamResult,
+          });
+        } catch (e) {
+          await writeJobAudit({
+            userId,
+            runId: run.id,
+            accountId,
+            job: "spamCheckJob",
+            phase: "failed",
+            details: { error: e instanceof Error ? e.message : "Failed" },
+          });
+        }
 
         if (settings.autoApplyUserRules) {
           await writeJobAudit({
@@ -223,20 +258,31 @@ export async function runAutomationNow(userId: string, input: RunInput) {
             job: "rulesEngineJob",
             phase: "started",
           });
-          const rulesResult = await runRulesEngineBatchJob({
-            userId,
-            emailIds: scopedEmailIds,
-          });
-          checkedRules += rulesResult.checkedRules;
-          appliedRules += rulesResult.appliedRules;
-          await writeJobAudit({
-            userId,
-            runId: run.id,
-            accountId,
-            job: "rulesEngineJob",
-            phase: "finished",
-            details: rulesResult,
-          });
+          try {
+            const rulesResult = await runRulesEngineBatchJob({
+              userId,
+              emailIds: scopedEmailIds,
+            });
+            checkedRules += rulesResult.checkedRules;
+            appliedRules += rulesResult.appliedRules;
+            await writeJobAudit({
+              userId,
+              runId: run.id,
+              accountId,
+              job: "rulesEngineJob",
+              phase: "finished",
+              details: rulesResult,
+            });
+          } catch (e) {
+            await writeJobAudit({
+              userId,
+              runId: run.id,
+              accountId,
+              job: "rulesEngineJob",
+              phase: "failed",
+              details: { error: e instanceof Error ? e.message : "Failed" },
+            });
+          }
         }
 
         await writeJobAudit({
@@ -246,21 +292,32 @@ export async function runAutomationNow(userId: string, input: RunInput) {
           job: "contactCandidateJob",
           phase: "started",
         });
-        const candidatesResult = await runContactCandidateJob({
-          userId,
-          accountId,
-          emailIds: scopedEmailIds,
-        });
-        pendingCandidates += candidatesResult.pendingCandidates;
-        totalCandidates += candidatesResult.totalCandidates;
-        await writeJobAudit({
-          userId,
-          runId: run.id,
-          accountId,
-          job: "contactCandidateJob",
-          phase: "finished",
-          details: candidatesResult,
-        });
+        try {
+          const candidatesResult = await runContactCandidateJob({
+            userId,
+            accountId,
+            emailIds: scopedEmailIds,
+          });
+          pendingCandidates += candidatesResult.pendingCandidates;
+          totalCandidates += candidatesResult.totalCandidates;
+          await writeJobAudit({
+            userId,
+            runId: run.id,
+            accountId,
+            job: "contactCandidateJob",
+            phase: "finished",
+            details: candidatesResult,
+          });
+        } catch (e) {
+          await writeJobAudit({
+            userId,
+            runId: run.id,
+            accountId,
+            job: "contactCandidateJob",
+            phase: "failed",
+            details: { error: e instanceof Error ? e.message : "Failed" },
+          });
+        }
 
         await writeJobAudit({
           userId,
@@ -269,21 +326,32 @@ export async function runAutomationNow(userId: string, input: RunInput) {
           job: "attachmentJob",
           phase: "started",
         });
-        const attachmentResult = await runAttachmentJob({
-          userId,
-          accountId,
-          emailIds: scopedEmailIds,
-          autoSaveAttachments: settings.autoSaveAttachments,
-        });
-        queuedAttachments += attachmentResult.queuedAttachments;
-        await writeJobAudit({
-          userId,
-          runId: run.id,
-          accountId,
-          job: "attachmentJob",
-          phase: "finished",
-          details: attachmentResult,
-        });
+        try {
+          const attachmentResult = await runAttachmentJob({
+            userId,
+            accountId,
+            emailIds: scopedEmailIds,
+            autoSaveAttachments: settings.autoSaveAttachments,
+          });
+          queuedAttachments += attachmentResult.queuedAttachments;
+          await writeJobAudit({
+            userId,
+            runId: run.id,
+            accountId,
+            job: "attachmentJob",
+            phase: "finished",
+            details: attachmentResult,
+          });
+        } catch (e) {
+          await writeJobAudit({
+            userId,
+            runId: run.id,
+            accountId,
+            job: "attachmentJob",
+            phase: "failed",
+            details: { error: e instanceof Error ? e.message : "Failed" },
+          });
+        }
       }
 
       result = {
