@@ -1,6 +1,8 @@
 import { prisma } from "@/server/db/prisma";
 import { decryptSecret } from "@/server/security/crypto";
 import {
+  type BulkMoveResult,
+  bulkMoveMessages,
   copyImapFolderMessages,
   createImapFolder,
   deleteImapFolder,
@@ -15,9 +17,11 @@ import {
   type ImapSession,
   listImapFolders,
   moveMessage,
+  moveMessageDirect,
   moveMessageToSpecialFolder,
   renameImapFolder,
   purgeFolderMessages,
+  resolveSpecialFolderPath,
   resolveUidByMessageId,
   searchUidBySubjectDate,
   setMessageSeen,
@@ -842,8 +846,45 @@ export async function runBulkEmailAction(input: {
   for (const [accountId, rows] of byAccount) {
     const { config } = await getAccountConfig(accountId, input.userId);
 
-    if (input.action === "move_folder") {
-      // Validate the target folder belongs to this account on IMAP.
+    if (input.action === "move_trash" || input.action === "move_spam") {
+      const specialType = input.action === "move_trash" ? "trash" as const : "spam" as const;
+      try {
+        const targetPath = await resolveSpecialFolderPath(config, specialType);
+        const messages = rows.map((row) => ({ uid: row.imapUid, fromFolder: row.folderPath }));
+        const moveResult = await bulkMoveMessages(config, messages, targetPath);
+
+        const failedUids = new Set(moveResult.failed.map((f) => f.uid));
+
+        const movedRows = rows.filter((r) => !failedUids.has(r.imapUid));
+        if (movedRows.length > 0) {
+          await prisma.emailIndex.updateMany({
+            where: { id: { in: movedRows.map((r) => r.id) } },
+            data: { folderPath: targetPath },
+          });
+        }
+
+        for (const row of rows) {
+          if (failedUids.has(row.imapUid)) {
+            const failInfo = moveResult.failed.find((f) => f.uid === row.imapUid);
+            outcomes.push({
+              emailId: row.id,
+              status: "failed",
+              reason: (failInfo?.error ?? "IMAP move failed").slice(0, 200),
+            });
+          } else {
+            outcomes.push({ emailId: row.id, status: "executed" });
+          }
+        }
+      } catch (error) {
+        for (const row of rows) {
+          outcomes.push({
+            emailId: row.id,
+            status: "failed",
+            reason: (error instanceof Error ? error.message : "action failed").slice(0, 200),
+          });
+        }
+      }
+    } else if (input.action === "move_folder") {
       const folders = await listImapFolders(config);
       const target = folders.find((f) => f.path === input.targetFolder);
       if (!target) {
@@ -856,53 +897,71 @@ export async function runBulkEmailAction(input: {
         }
         continue;
       }
-    }
 
-    for (const row of rows) {
       try {
-        if (input.action === "mark_read") {
-          await setMessageSeen(config, row.folderPath, row.imapUid, true);
-          await prisma.emailIndex.update({
-            where: { id: row.id },
-            data: {
-              flags: Array.from(new Set([...(row.flags ?? []), "\\Seen"])),
-            },
-          });
-        } else if (input.action === "mark_unread") {
-          await setMessageSeen(config, row.folderPath, row.imapUid, false);
-          await prisma.emailIndex.update({
-            where: { id: row.id },
-            data: {
-              flags: (row.flags ?? []).filter((f) => f !== "\\Seen"),
-            },
-          });
-        } else if (input.action === "move_trash") {
-          const target = await moveIndexedEmailToSpecial(row.id, input.userId, "trash");
-          await prisma.emailIndex.update({
-            where: { id: row.id },
-            data: { folderPath: target },
-          });
-        } else if (input.action === "move_spam") {
-          const target = await moveIndexedEmailToSpecial(row.id, input.userId, "spam");
-          await prisma.emailIndex.update({
-            where: { id: row.id },
-            data: { folderPath: target },
-          });
-        } else if (input.action === "move_folder") {
-          // Re-validation already happened above; ts also know targetFolder is set.
-          await moveIndexedEmail(row.id, input.userId, input.targetFolder!);
-          await prisma.emailIndex.update({
-            where: { id: row.id },
+        const messages = rows.map((row) => ({ uid: row.imapUid, fromFolder: row.folderPath }));
+        const moveResult = await bulkMoveMessages(config, messages, input.targetFolder!);
+
+        const failedUids = new Set(moveResult.failed.map((f) => f.uid));
+
+        const movedRows = rows.filter((r) => !failedUids.has(r.imapUid));
+        if (movedRows.length > 0) {
+          await prisma.emailIndex.updateMany({
+            where: { id: { in: movedRows.map((r) => r.id) } },
             data: { folderPath: input.targetFolder! },
           });
         }
-        outcomes.push({ emailId: row.id, status: "executed" });
+
+        for (const row of rows) {
+          if (failedUids.has(row.imapUid)) {
+            const failInfo = moveResult.failed.find((f) => f.uid === row.imapUid);
+            outcomes.push({
+              emailId: row.id,
+              status: "failed",
+              reason: (failInfo?.error ?? "IMAP move failed").slice(0, 200),
+            });
+          } else {
+            outcomes.push({ emailId: row.id, status: "executed" });
+          }
+        }
       } catch (error) {
-        outcomes.push({
-          emailId: row.id,
-          status: "failed",
-          reason: (error instanceof Error ? error.message : "action failed").slice(0, 200),
-        });
+        for (const row of rows) {
+          outcomes.push({
+            emailId: row.id,
+            status: "failed",
+            reason: (error instanceof Error ? error.message : "action failed").slice(0, 200),
+          });
+        }
+      }
+    } else {
+      // mark_read / mark_unread — individual per message (flag operations are UID-specific)
+      for (const row of rows) {
+        try {
+          if (input.action === "mark_read") {
+            await setMessageSeen(config, row.folderPath, row.imapUid, true);
+            await prisma.emailIndex.update({
+              where: { id: row.id },
+              data: {
+                flags: Array.from(new Set([...(row.flags ?? []), "\\Seen"])),
+              },
+            });
+          } else if (input.action === "mark_unread") {
+            await setMessageSeen(config, row.folderPath, row.imapUid, false);
+            await prisma.emailIndex.update({
+              where: { id: row.id },
+              data: {
+                flags: (row.flags ?? []).filter((f) => f !== "\\Seen"),
+              },
+            });
+          }
+          outcomes.push({ emailId: row.id, status: "executed" });
+        } catch (error) {
+          outcomes.push({
+            emailId: row.id,
+            status: "failed",
+            reason: (error instanceof Error ? error.message : "action failed").slice(0, 200),
+          });
+        }
       }
     }
   }
