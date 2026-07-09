@@ -31,13 +31,34 @@ export async function GET(req: Request) {
   });
   const accountMap = new Map(accounts.map((a) => [a.id, a.name]));
 
+  const excludedFolders = await prisma.mailFolder.findMany({
+    where: {
+      accountId: { in: accounts.map((a) => a.id) },
+      OR: [
+        { path: { contains: "Trash", mode: "insensitive" } },
+        { path: { contains: "Papierkorb", mode: "insensitive" } },
+        { path: { contains: "Spam", mode: "insensitive" } },
+        { path: { contains: "Junk", mode: "insensitive" } },
+        { path: { contains: "Deleted", mode: "insensitive" } },
+        { path: { contains: "Bin", mode: "insensitive" } },
+      ],
+    },
+    select: { path: true },
+  });
+  const excludedPaths = excludedFolders.map((f) => f.path);
+
+  const baseFilter = {
+    account: { userId: session.userId },
+    ...(excludedPaths.length > 0 ? { folderPath: { notIn: excludedPaths } } : {}),
+  };
+
   const groups: DuplicateGroup[] = [];
 
   // --- 1. MessageId-based duplicates ---
   const duplicateMessageIds = await prisma.emailIndex.groupBy({
     by: ["messageId"],
     where: {
-      account: { userId: session.userId },
+      ...baseFilter,
       messageId: { not: null },
     },
     having: {
@@ -55,7 +76,7 @@ export async function GET(req: Request) {
 
     const emails = await prisma.emailIndex.findMany({
       where: {
-        account: { userId: session.userId },
+        ...baseFilter,
         messageId: { in: msgIds },
       },
       select: {
@@ -102,7 +123,7 @@ export async function GET(req: Request) {
   if (remainingSlots > 0) {
     const noMsgIdEmails = await prisma.emailIndex.findMany({
       where: {
-        account: { userId: session.userId },
+        ...baseFilter,
         OR: [{ messageId: null }, { messageId: "" }],
         date: { not: null },
       },

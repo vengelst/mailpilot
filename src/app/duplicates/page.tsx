@@ -109,10 +109,13 @@ export default function DuplicatesPage() {
   async function trashEmail(emailId: string) {
     setDeletingIds((prev) => new Set(prev).add(emailId));
     try {
-      const res = await fetch(`/api/emails/${emailId}/move`, {
+      const res = await fetch("/api/emails/bulk", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ targetSpecial: "trash" }),
+        body: JSON.stringify({
+          action: "move_trash",
+          emailIds: [emailId],
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -146,15 +149,21 @@ export default function DuplicatesPage() {
     setDeletingIds((prev) => new Set([...prev, ...ids]));
 
     try {
-      await Promise.all(
-        toDelete.map((e) =>
-          fetch(`/api/emails/${e.id}/move`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ targetSpecial: "trash" }),
-          }),
-        ),
-      );
+      const res = await fetch("/api/emails/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "move_trash",
+          emailIds: toDelete.map((e) => e.id),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(
+          (data as { error?: string })?.error ?? "Fehler beim Löschen.",
+        );
+        return;
+      }
       setDeletedGroups((prev) => new Set(prev).add(groupIndex));
       setGroups((prev) =>
         prev.map((g, i) =>
