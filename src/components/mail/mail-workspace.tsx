@@ -94,6 +94,7 @@ type Account = {
   imapPort: number;
   imapSecure: boolean;
   imapUsername: string;
+  isDefault?: boolean;
 };
 
 const ACCOUNT_COLORS = [
@@ -1588,7 +1589,8 @@ export function MailWorkspace() {
       return;
     }
     if (!next.some((a) => a.id === selectedAccountId)) {
-      setSelectedAccountId(next[0].id);
+      const defaultAccount = next.find((a) => a.isDefault);
+      setSelectedAccountId(defaultAccount ? defaultAccount.id : next[0].id);
     }
   }
 
@@ -2213,7 +2215,40 @@ export function MailWorkspace() {
   }
 
   async function checkNow() {
-    await syncAllFolders("manual");
+    if (!selectedAccountId || isAllAccounts) return;
+    setIsSyncing(true);
+    setSyncProgress({
+      kind: "all_folders",
+      label: "Inbox-Check läuft …",
+      totalMails: 0,
+      processedMails: 0,
+      remainingMails: 0,
+      etaSeconds: null,
+      isEstimate: true,
+      lastFolderPath: "INBOX",
+    });
+    try {
+      const res = await fetch(`/api/accounts/${selectedAccountId}/sync`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folderPath: "INBOX", mode: "incremental" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setUiError((data as { error?: string }).error ?? "Inbox-Check fehlgeschlagen.");
+      } else {
+        setUiInfo("Inbox-Check abgeschlossen.");
+        if (selectedFolderPathRef.current === "INBOX") {
+          await loadEmails();
+        }
+        await reloadFolders();
+      }
+    } catch (e) {
+      setUiError(e instanceof Error ? e.message : "Inbox-Check fehlgeschlagen.");
+    } finally {
+      setIsSyncing(false);
+      setSyncProgress(null);
+    }
   }
 
   async function runBulk(
@@ -3465,7 +3500,7 @@ export function MailWorkspace() {
           onClick={() => void checkNow()}
           disabled={isSyncing || !selectedAccountId || isAllAccounts}
           className="glass-btn rounded-lg px-3 py-1.5 text-sm disabled:opacity-50"
-          title={isAllAccounts ? "Sync nicht verfügbar im Alle-Konten-Modus" : `Manuell sofort Delta-Sync für alle Ordner starten (Auto-Intervall: ${newMailCheckIntervalMinutes} Min.)`}
+          title={isAllAccounts ? "Sync nicht verfügbar im Alle-Konten-Modus" : "Nur Inbox schnell prüfen (Fast-Sync)"}
         >
           Check jetzt
         </button>
@@ -3745,7 +3780,7 @@ export function MailWorkspace() {
                 Vollsync bei Inaktivität (nach 10 Min. Idle)
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
-                Manuell: &quot;Check jetzt&quot; startet Alle-Ordner-Sync.
+                Manuell: &quot;Check jetzt&quot; prüft nur die Inbox (Fast-Sync).
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
                 Nächster Lauf: {formatDateTime(nextScheduledRunAt)}

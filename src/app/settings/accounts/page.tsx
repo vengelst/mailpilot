@@ -15,6 +15,7 @@ type Account = {
   smtpSecure: boolean;
   smtpUsername: string | null;
   smtpFromName: string | null;
+  isDefault: boolean;
 };
 
 const emptyForm = {
@@ -180,6 +181,18 @@ export default function AccountsSettingsPage() {
     await loadAccounts();
   }
 
+  async function setDefault() {
+    if (!selectedId) return;
+    setFeedback(null);
+    const res = await fetch(`/api/accounts/${selectedId}/set-default`, { method: "POST" });
+    if (!res.ok) {
+      setFeedback({ kind: "error", text: await readError(res, "Standard konnte nicht gesetzt werden.") });
+      return;
+    }
+    setFeedback({ kind: "info", text: "Standard-Konto gesetzt. Dieses Konto wird beim Start angezeigt." });
+    await loadAccounts();
+  }
+
   async function updateSelected(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedId) return;
@@ -294,7 +307,14 @@ export default function AccountsSettingsPage() {
                         : "border-white/10 hover:glass"
                     }`}
                   >
-                    <p className="font-medium glass-text-primary">{account.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium glass-text-primary">{account.name}</p>
+                      {account.isDefault && (
+                        <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-blue-300">
+                          Standard
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs glass-text-secondary">{account.imapUsername}</p>
                   </button>
                 </li>
@@ -335,6 +355,14 @@ export default function AccountsSettingsPage() {
                   >
                     Verbindung testen
                   </button>
+                  {selectedAccount && !selectedAccount.isDefault && (
+                    <button
+                      onClick={setDefault}
+                      className="glass-btn rounded-lg px-3 py-1.5 text-xs text-blue-300"
+                    >
+                      Als Standard setzen
+                    </button>
+                  )}
                   <button
                     onClick={deleteSelected}
                     className="glass-btn rounded-lg px-3 py-1.5 text-xs text-red-400"

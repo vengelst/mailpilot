@@ -27,7 +27,7 @@ export async function GET() {
 
   const accounts = await prisma.mailAccount.findMany({
     where: { userId: session.userId },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     select: {
       id: true,
       name: true,
@@ -40,6 +40,7 @@ export async function GET() {
       smtpSecure: true,
       smtpUsername: true,
       smtpFromName: true,
+      isDefault: true,
       createdAt: true,
     },
   });

@@ -126,6 +126,7 @@ model MailAccount {
   smtpUsername          String?
   encryptedSmtpPassword String?
   smtpFromName          String?
+  isDefault             Boolean      @default(false)
   excludedFolders       String[]     @default([])
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
