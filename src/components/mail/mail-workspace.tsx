@@ -3043,6 +3043,26 @@ export function MailWorkspace() {
     };
   }, [safeMailDocument, bodyMode, selectedEmail?.id]);
 
+  // --- Fast-Sync: nur INBOX im Auto-Timer ---
+  async function syncInboxOnly() {
+    const accountId = selectedAccountIdRef.current;
+    if (!accountId || accountId === "__all__") return;
+    try {
+      const res = await fetch(`/api/accounts/${accountId}/sync`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folderPath: "INBOX", mode: "incremental" }),
+      });
+      if (!res.ok) return;
+      if (selectedFolderPathRef.current === "INBOX") {
+        await loadEmails();
+      }
+      await reloadFolders();
+    } catch {
+      // Silent fail für Auto-Sync
+    }
+  }
+
   useEffect(() => {
     if (!selectedAccountId || isAllAccounts) return;
     const intervalMs = Math.max(5, newMailCheckIntervalMinutes) * 60 * 1000;
@@ -3052,7 +3072,7 @@ export function MailWorkspace() {
       autoCheckInFlightRef.current = true;
       void (async () => {
         try {
-          await syncAllFolders("auto");
+          await syncInboxOnly();
         } finally {
           autoCheckInFlightRef.current = false;
         }
@@ -3061,6 +3081,49 @@ export function MailWorkspace() {
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccountId, newMailCheckIntervalMinutes, isSyncing]);
+
+  // --- Idle-based Full-Sync ---
+  const lastUserActionRef = useRef(Date.now());
+  const idleFullSyncDoneRef = useRef(false);
+  const IDLE_FULL_SYNC_MS = 10 * 60 * 1000; // 10 Minuten
+
+  useEffect(() => {
+    function markActive() {
+      lastUserActionRef.current = Date.now();
+      idleFullSyncDoneRef.current = false;
+    }
+    window.addEventListener("click", markActive);
+    window.addEventListener("keydown", markActive);
+    window.addEventListener("scroll", markActive, true);
+    return () => {
+      window.removeEventListener("click", markActive);
+      window.removeEventListener("keydown", markActive);
+      window.removeEventListener("scroll", markActive, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAccountId || isAllAccounts) return;
+    const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (isSyncing || autoCheckInFlightRef.current) return;
+      if (idleFullSyncDoneRef.current) return;
+      const idleMs = Date.now() - lastUserActionRef.current;
+      if (idleMs >= IDLE_FULL_SYNC_MS) {
+        idleFullSyncDoneRef.current = true;
+        autoCheckInFlightRef.current = true;
+        void (async () => {
+          try {
+            await syncAllFolders("auto");
+          } finally {
+            autoCheckInFlightRef.current = false;
+          }
+        })();
+      }
+    }, 2 * 60 * 1000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAccountId, isSyncing]);
 
   useEffect(() => {
     if (!selectedAccountId || isAllAccounts) return;
@@ -3670,13 +3733,16 @@ export function MailWorkspace() {
                   : "Automatisch nur nach Intervall"}
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
-                Automatik: Delta-Sync alle {Math.max(5, Math.round(newMailCheckIntervalMinutes))} Minuten
+                Automatik: Inbox-Sync alle {Math.max(5, Math.round(newMailCheckIntervalMinutes))} Minuten
                 {typeof document !== "undefined" && document.visibilityState !== "visible"
                   ? " (wartet bei inaktivem Tab)"
                   : ""}
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
-                Manuell: &quot;Check jetzt&quot; startet sofort denselben Delta-Sync.
+                Vollsync bei Inaktivität (nach 10 Min. Idle)
+              </p>
+              <p className="mt-1 text-xs glass-text-tertiary">
+                Manuell: &quot;Check jetzt&quot; startet Alle-Ordner-Sync.
               </p>
               <p className="mt-1 text-xs glass-text-tertiary">
                 Nächster Lauf: {formatDateTime(nextScheduledRunAt)}
