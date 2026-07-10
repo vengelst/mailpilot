@@ -59,8 +59,14 @@ export async function POST(
 
       if (matchedProfile && matchedProfile.targetFolder) {
         try {
-          await moveIndexedEmail(id, session.userId, matchedProfile.targetFolder);
-          await prisma.emailIndex.delete({ where: { id } });
+          const newUid = await moveIndexedEmail(id, session.userId, matchedProfile.targetFolder);
+          await prisma.emailIndex.update({
+            where: { id },
+            data: {
+              folderPath: matchedProfile.targetFolder,
+              ...(newUid ? { imapUid: newUid } : {}),
+            },
+          });
           return ok({ ok: true, movedTo: matchedProfile.targetFolder });
         } catch {
           return ok({ ok: true });

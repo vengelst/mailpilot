@@ -868,7 +868,7 @@ export async function moveMessage(
   fromFolder: string,
   uid: bigint,
   targetFolder: string,
-) {
+): Promise<bigint | null> {
   const client = buildClient(config);
   try {
     await client.connect();
@@ -878,7 +878,12 @@ export async function moveMessage(
       throw new Error(`Target folder '${targetFolder}' does not exist on IMAP server`);
     }
     await client.mailboxOpen(fromFolder);
-    await client.messageMove(uid.toString(), targetFolder, { uid: true });
+    const result = await client.messageMove(uid.toString(), targetFolder, { uid: true });
+    if (result && result.uidMap) {
+      const newUid = result.uidMap.get(Number(uid));
+      if (newUid) return BigInt(newUid);
+    }
+    return null;
   } finally {
     if (client.usable) {
       await client.logout();
@@ -896,12 +901,17 @@ export async function moveMessageDirect(
   fromFolder: string,
   uid: bigint,
   targetFolder: string,
-) {
+): Promise<bigint | null> {
   const client = buildClient(config);
   try {
     await client.connect();
     await client.mailboxOpen(fromFolder);
-    await client.messageMove(uid.toString(), targetFolder, { uid: true });
+    const result = await client.messageMove(uid.toString(), targetFolder, { uid: true });
+    if (result && result.uidMap) {
+      const newUid = result.uidMap.get(Number(uid));
+      if (newUid) return BigInt(newUid);
+    }
+    return null;
   } finally {
     if (client.usable) {
       await client.logout();
@@ -914,14 +924,14 @@ export async function moveMessageToSpecialFolder(
   fromFolder: string,
   uid: bigint,
   type: "trash" | "spam",
-) {
+): Promise<{ path: string; newUid: bigint | null }> {
   const folders = await listImapFolders(config);
   const target = folders.find((folder) => folder.specialUse === type);
   if (!target) {
     throw new Error(`No ${type} folder found on IMAP server`);
   }
-  await moveMessageDirect(config, fromFolder, uid, target.path);
-  return target.path;
+  const newUid = await moveMessageDirect(config, fromFolder, uid, target.path);
+  return { path: target.path, newUid };
 }
 
 /**

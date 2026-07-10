@@ -206,11 +206,12 @@ export async function runSpamCheckJob(input: {
     flagged += 1;
 
     try {
-      const targetFolder = await moveIndexedEmailToSpecial(email.id, input.userId, "spam");
+      const { path: targetFolder, newUid } = await moveIndexedEmailToSpecial(email.id, input.userId, "spam");
       await prisma.emailIndex.update({
         where: { id: email.id },
         data: {
           folderPath: targetFolder,
+          ...(newUid ? { imapUid: newUid } : {}),
           aiCategory: "spam",
           aiPriority: "high",
           actionRequired: false,

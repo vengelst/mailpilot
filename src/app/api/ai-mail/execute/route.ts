@@ -110,17 +110,17 @@ export async function POST(req: NextRequest) {
           });
           outcomes.push({ index: i, type: action.type, emailId: action.emailId, status: "executed" });
         } else if (action.type === "move_trash") {
-          const target = await moveIndexedEmailToSpecial(action.emailId, session.userId, "trash");
+          const { path: target, newUid } = await moveIndexedEmailToSpecial(action.emailId, session.userId, "trash");
           await prisma.emailIndex.update({
             where: { id: action.emailId },
-            data: { folderPath: target },
+            data: { folderPath: target, ...(newUid ? { imapUid: newUid } : {}) },
           });
           outcomes.push({ index: i, type: action.type, emailId: action.emailId, status: "executed" });
         } else if (action.type === "move_spam") {
-          const target = await moveIndexedEmailToSpecial(action.emailId, session.userId, "spam");
+          const { path: target, newUid } = await moveIndexedEmailToSpecial(action.emailId, session.userId, "spam");
           await prisma.emailIndex.update({
             where: { id: action.emailId },
-            data: { folderPath: target },
+            data: { folderPath: target, ...(newUid ? { imapUid: newUid } : {}) },
           });
           outcomes.push({ index: i, type: action.type, emailId: action.emailId, status: "executed" });
         } else if (action.type === "mark_read") {

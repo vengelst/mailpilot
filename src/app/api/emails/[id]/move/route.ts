@@ -34,19 +34,22 @@ export async function POST(
     });
     if (!before) return fail("Email not found", 404);
 
-    let targetFolder = payload.targetFolder ?? null;
+    let targetFolder: string | null = payload.targetFolder ?? null;
+    let newUid: bigint | null = null;
 
     if (payload.targetSpecial) {
-      targetFolder = await moveIndexedEmailToSpecial(id, session.userId, payload.targetSpecial);
+      const result = await moveIndexedEmailToSpecial(id, session.userId, payload.targetSpecial);
+      targetFolder = result.path;
+      newUid = result.newUid;
     } else if (payload.targetFolder) {
-      await moveIndexedEmail(id, session.userId, payload.targetFolder);
+      newUid = await moveIndexedEmail(id, session.userId, payload.targetFolder);
       targetFolder = payload.targetFolder;
     }
 
     if (!targetFolder) return fail("No target folder resolved", 400);
     await prisma.emailIndex.update({
       where: { id },
-      data: { folderPath: targetFolder },
+      data: { folderPath: targetFolder, ...(newUid ? { imapUid: newUid } : {}) },
     });
 
     await writeAuditLog({

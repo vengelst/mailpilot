@@ -630,20 +630,21 @@ export async function markEmailSeen(emailId: string, userId: string, seen: boole
   await setMessageSeen(config, email.folderPath, email.imapUid, seen);
 }
 
-export async function moveIndexedEmail(emailId: string, userId: string, targetFolder: string) {
+export async function moveIndexedEmail(emailId: string, userId: string, targetFolder: string): Promise<bigint | null> {
   const email = await prisma.emailIndex.findFirst({
     where: { id: emailId, account: { userId } },
   });
   if (!email) throw new Error("Email not found");
   const { config } = await getAccountConfig(email.accountId, userId);
-  await moveMessage(config, email.folderPath, email.imapUid, targetFolder);
+  const newUid = await moveMessageDirect(config, email.folderPath, email.imapUid, targetFolder);
+  return newUid;
 }
 
 export async function moveIndexedEmailToSpecial(
   emailId: string,
   userId: string,
   target: "trash" | "spam",
-) {
+): Promise<{ path: string; newUid: bigint | null }> {
   const email = await prisma.emailIndex.findFirst({
     where: { id: emailId, account: { userId } },
   });
@@ -722,10 +723,20 @@ export async function loadMessageBody(
     const resolvedUid = await resolveCorrectUid(config, email);
     if (resolvedUid && resolvedUid !== email.imapUid) {
       console.log(`[loadMessageBody] UID resolved: ${email.imapUid} → ${resolvedUid}`);
-      await prisma.emailIndex.update({
-        where: { id: email.id },
-        data: { imapUid: resolvedUid },
-      });
+      try {
+        await prisma.emailIndex.update({
+          where: { id: email.id },
+          data: { imapUid: resolvedUid },
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg.includes("Unique constraint")) {
+          await prisma.emailIndex.delete({ where: { id: email.id } });
+          console.log(`[loadMessageBody] Deleted stale duplicate entry ${email.id}`);
+        } else {
+          throw e;
+        }
+      }
       body = await fetchMessageBody(config, email.folderPath, resolvedUid);
     }
   }
