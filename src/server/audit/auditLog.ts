@@ -1,6 +1,15 @@
+/**
+ * @module audit/auditLog
+ *
+ * Structured audit logging for MailPilot.
+ * Persists before/after snapshots of entity changes so that every
+ * significant user or system action is traceable.
+ */
+
 import { AuditActor } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
 
+/** Shape of data required to create a single audit log entry. */
 type AuditInput = {
   userId?: string | null;
   accountId?: string | null;
@@ -18,6 +27,9 @@ type AuditInput = {
  * - other  → unchanged
  *
  * Caller responsibility: do not pass mailtexts, passwords, tokens or API keys.
+ *
+ * @param value - The value (or nested structure) to sanitize.
+ * @returns A JSON-safe copy of the input.
  */
 export function sanitizeAuditJson(value: unknown): unknown {
   if (value === null || value === undefined) return value;
@@ -35,6 +47,12 @@ export function sanitizeAuditJson(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Persists an audit log entry to the database.
+ * Before/after JSON values are automatically sanitized for safe storage.
+ *
+ * @param input - The audit event data including action, actor, and optional snapshots.
+ */
 export async function writeAuditLog(input: AuditInput) {
   await prisma.auditLog.create({
     data: {
