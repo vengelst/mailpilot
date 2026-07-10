@@ -897,6 +897,7 @@ export function MailWorkspace() {
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden><polyline points="18 15 12 9 6 15" /></svg>
           </button>
         </div>
+        <button onClick={actions.composeNewMail} title="Neue E-Mail" className="glass-btn-primary rounded-lg px-3 py-1.5 text-sm">Neue Mail</button>
         <select value={s.selectedAccountId} onChange={(e) => { s.setSelectedAccountId(e.target.value); s.setSelectedFolderPath(""); s.setFolders([]); s.setMoveTargetFolder(""); s.setEmails([]); s.setSelectedEmail(null); s.setBodyContent(null); s.setMobilePane("middle"); s.setEmailDetailMenuOpen(false); }} className="glass-select ml-2 rounded-lg px-2 py-1.5 text-sm">
           <option value="">Konto wählen</option>
           {s.accounts.length > 1 && <option value="__all__">Alle Konten</option>}
@@ -926,7 +927,6 @@ export function MailWorkspace() {
         <a href="/sender-profiles" title="Absender-Profile" className="glass-btn rounded-lg px-3 py-1.5 text-sm"><span className="hidden md:inline">Absender</span><span className="md:hidden">Abs.</span></a>
         <a href="/labels" title="Labels verwalten" className="glass-btn rounded-lg px-3 py-1.5 text-sm">Labels</a>
         <a href="/ai-assistant" title="KI-Assistent" className="glass-btn rounded-lg px-3 py-1.5 text-sm">✨ KI</a>
-        <button onClick={actions.composeNewMail} title="Neue E-Mail" className="glass-btn-primary rounded-lg px-3 py-1.5 text-sm">Neue Mail</button>
         <a href="/settings" aria-label="Einstellungen" title="Einstellungen" className="glass-btn rounded-lg px-2 py-1.5">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
         </a>
