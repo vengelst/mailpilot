@@ -36,11 +36,48 @@ export async function POST(req: NextRequest) {
       return fail("Either email or domain is required", 400);
     }
 
+    const normalizedEmail = payload.email?.toLowerCase();
+    const normalizedDomain = normalizeDomain(payload.domain);
+
+    const existing = await prisma.blockedSender.findFirst({
+      where: {
+        userId: session.userId,
+        ...(normalizedEmail ? { email: normalizedEmail } : { domain: normalizedDomain }),
+      },
+    });
+
+    if (existing) {
+      const updated = await prisma.blockedSender.update({
+        where: { id: existing.id },
+        data: {
+          action: payload.action,
+          note: payload.note ?? existing.note,
+          active: payload.active ?? true,
+        },
+      });
+      await writeAuditLog({
+        userId: session.userId,
+        action: "blocked_sender.updated",
+        actor: "user",
+        beforeJson: {
+          blockedSenderId: existing.id,
+          action: existing.action,
+          active: existing.active,
+        },
+        afterJson: {
+          blockedSenderId: updated.id,
+          action: updated.action,
+          active: updated.active,
+        },
+      });
+      return ok({ entry: updated });
+    }
+
     const entry = await prisma.blockedSender.create({
       data: {
         userId: session.userId,
-        email: payload.email?.toLowerCase(),
-        domain: normalizeDomain(payload.domain),
+        email: normalizedEmail,
+        domain: normalizedDomain,
         action: payload.action,
         note: payload.note,
         active: payload.active ?? true,
