@@ -933,7 +933,7 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
         s.setRunOnAppStart(data.settings.runOnAppStart);
       }
       if (typeof data.settings?.runIntervalMinutes === "number" && Number.isFinite(data.settings.runIntervalMinutes)) {
-        s.setNewMailCheckIntervalMinutes(Math.max(5, Math.round(data.settings.runIntervalMinutes)));
+        s.setNewMailCheckIntervalMinutes(Math.max(1, Math.round(data.settings.runIntervalMinutes)));
       }
       s.setUiInfo("Auto-Update-Einstellungen gespeichert.");
       return true;

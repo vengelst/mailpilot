@@ -764,7 +764,7 @@ export function MailWorkspace() {
   // Fast-Sync: auto-timer for inbox only
   useEffect(() => {
     if (!s.selectedAccountId || s.isAllAccounts) return;
-    const intervalMs = Math.max(5, s.newMailCheckIntervalMinutes) * 60 * 1000;
+    const intervalMs = Math.max(1, s.newMailCheckIntervalMinutes) * 60 * 1000;
     const timer = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       if (s.isSyncing || s.autoCheckInFlightRef.current) return;
@@ -997,7 +997,7 @@ export function MailWorkspace() {
             <article className="glass rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Status</p>
               <p className="mt-1 text-sm glass-text-primary">{s.runOnAppStart ? "Automatisch beim App-Start + Intervall" : "Automatisch nur nach Intervall"}</p>
-              <p className="mt-1 text-xs glass-text-tertiary">Automatik: Inbox-Sync alle {Math.max(5, Math.round(s.newMailCheckIntervalMinutes))} Minuten{typeof document !== "undefined" && document.visibilityState !== "visible" ? " (wartet bei inaktivem Tab)" : ""}</p>
+              <p className="mt-1 text-xs glass-text-tertiary">Automatik: Inbox-Sync alle {Math.max(1, Math.round(s.newMailCheckIntervalMinutes))} Minuten{typeof document !== "undefined" && document.visibilityState !== "visible" ? " (wartet bei inaktivem Tab)" : ""}</p>
               <p className="mt-1 text-xs glass-text-tertiary">Vollsync bei Inaktivität (nach 10 Min. Idle)</p>
               <p className="mt-1 text-xs glass-text-tertiary">Manuell: &quot;Check jetzt&quot; prüft nur die Inbox (Fast-Sync).</p>
               <p className="mt-1 text-xs glass-text-tertiary">Nächster Lauf: {formatDateTime(s.nextScheduledRunAt)}</p>
@@ -1006,9 +1006,9 @@ export function MailWorkspace() {
               <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Zeitplan</p>
               <div className="mt-2 flex items-center gap-2">
                 <label className="text-xs glass-text-tertiary" htmlFor="automation-interval-input">Intervall</label>
-                <input id="automation-interval-input" type="number" min={5} max={1440} step={5} value={s.newMailCheckIntervalMinutes} onChange={(e) => s.setNewMailCheckIntervalMinutes(Math.max(5, Number(e.target.value) || 5))} className="glass-input w-24 rounded-lg px-2 py-1 text-xs" />
+                <input id="automation-interval-input" type="number" min={1} max={1440} step={1} value={s.newMailCheckIntervalMinutes} onChange={(e) => s.setNewMailCheckIntervalMinutes(Math.max(1, Number(e.target.value) || 1))} className="glass-input w-24 rounded-lg px-2 py-1 text-xs" />
                 <span className="text-xs glass-text-tertiary">min</span>
-                <button type="button" onClick={() => void actions.saveAutomationDashboardSettings({ runIntervalMinutes: Math.max(5, Math.round(s.newMailCheckIntervalMinutes)) })} disabled={s.automationSaving} className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50">Speichern</button>
+                <button type="button" onClick={() => void actions.saveAutomationDashboardSettings({ runIntervalMinutes: Math.max(1, Math.round(s.newMailCheckIntervalMinutes)) })} disabled={s.automationSaving} className="glass-btn rounded-lg px-2 py-1 text-xs disabled:opacity-50">Speichern</button>
               </div>
               <label className="mt-2 flex items-center gap-2 text-xs glass-text-secondary">
                 <input type="checkbox" checked={s.runOnAppStart} onChange={(e) => { const checked = e.target.checked; s.setRunOnAppStart(checked); void actions.saveAutomationDashboardSettings({ runOnAppStart: checked }); }} />

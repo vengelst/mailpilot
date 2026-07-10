@@ -260,7 +260,7 @@ export function useMailState() {
     if (!latestRunStartedAt) return null;
     const base = new Date(latestRunStartedAt).getTime();
     if (!Number.isFinite(base)) return null;
-    return new Date(base + Math.max(5, Math.round(newMailCheckIntervalMinutes)) * 60 * 1000).toISOString();
+    return new Date(base + Math.max(1, Math.round(newMailCheckIntervalMinutes)) * 60 * 1000).toISOString();
   }, [latestRunStartedAt, newMailCheckIntervalMinutes]);
 
   const folderEmptyKind: "trash" | "spam" | null = useMemo(() => {

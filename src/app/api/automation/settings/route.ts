@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const patchSchema = z.object({
   runOnAppStart: z.boolean().optional(),
-  runIntervalMinutes: z.number().int().min(5).max(24 * 60).optional(),
+  runIntervalMinutes: z.number().int().min(1).max(24 * 60).optional(),
   autoAnalyzeNewEmails: z.boolean().optional(),
   autoApplyUserRules: z.boolean().optional(),
   autoApplyAiSuggestions: z.boolean().optional(),
