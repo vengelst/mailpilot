@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Account = {
@@ -32,6 +32,67 @@ const emptyForm = {
   smtpPassword: "",
   smtpFromName: "",
 };
+
+function HelpButton() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 text-xs font-bold glass-text-secondary hover:glass-text-primary hover:border-white/40 transition-colors"
+        title="Hilfe"
+      >
+        ?
+      </button>
+      {open && (
+        <div className="absolute left-0 top-9 z-50 w-[420px] rounded-xl glass-card p-5 shadow-2xl text-sm glass-text-secondary space-y-3">
+          <h3 className="font-semibold glass-text-primary">Hinweis: Google Workspace &amp; 2FA</h3>
+          <p>
+            Bei Google Workspace mit <strong>Zwei-Faktor-Authentifizierung (2FA)</strong> funktioniert
+            ein normales Passwort für IMAP nicht mehr. Du brauchst ein <strong>App-Passwort</strong>.
+          </p>
+          <p className="font-semibold glass-text-primary">So erstellst du es:</p>
+          <ol className="list-decimal ml-4 space-y-1.5">
+            <li>
+              Gehe zu{" "}
+              <a
+                href="https://myaccount.google.com/security"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline text-blue-400 hover:text-blue-300"
+              >
+                myaccount.google.com → Sicherheit
+              </a>
+            </li>
+            <li>Unter „Anmeldung bei Google" → <strong>App-Passwörter</strong> (oder „2-Schritt-Verifizierung" → „App-Passwörter")</li>
+            <li>Erstelle ein App-Passwort für „Mail" / „Anderes Gerät" → Name z.B. „MailPilot"</li>
+            <li>Google gibt dir ein <strong>16-stelliges Passwort</strong> (z.B. <code className="glass px-1 rounded">abcd efgh ijkl mnop</code>)</li>
+            <li>Dieses Passwort trägst du dann hier als <strong>IMAP-Passwort</strong> ein (ohne Leerzeichen)</li>
+          </ol>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="mt-2 glass-btn rounded-lg px-3 py-1.5 text-xs w-full"
+          >
+            Schließen
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AccountsSettingsPage() {
   const router = useRouter();
@@ -270,7 +331,10 @@ export default function AccountsSettingsPage() {
             ← Einstellungen
           </a>
         </div>
-        <h1 className="text-2xl font-semibold glass-text-primary">IMAP-Konten</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold glass-text-primary">IMAP-Konten</h1>
+          <HelpButton />
+        </div>
         <p className="mt-1 text-sm glass-text-secondary">
           Verbindungsdaten werden serverseitig verschlüsselt gespeichert.
         </p>
