@@ -5163,18 +5163,52 @@ export function MailWorkspace() {
                   </div>
                 ) : null}
 
-                {(selectedEmail.attachments?.length ?? 0) > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      document.getElementById("attachments-section")?.scrollIntoView({ behavior: "smooth" });
-                    }}
-                    className="mb-3 inline-flex items-center gap-1.5 rounded-lg glass px-3 py-1.5 text-xs font-medium glass-text-primary hover:opacity-80 transition-opacity"
-                  >
-                    📎 {selectedEmail.attachments.length} Anhäng{selectedEmail.attachments.length === 1 ? "" : "e"}
-                    <span className="glass-text-muted">↓</span>
-                  </button>
-                ) : null}
+                {(selectedEmail.attachments?.length ?? 0) > 0 ? (() => {
+                  const typeMap: Record<string, number> = {};
+                  for (const att of selectedEmail.attachments) {
+                    const ext = (getAttachmentDisplayName(att).split(".").pop() || att.mimeType || "other").toLowerCase();
+                    const label = ext === "jpg" || ext === "jpeg" ? "JPEG"
+                      : ext === "png" ? "PNG"
+                      : ext === "gif" ? "GIF"
+                      : ext === "webp" ? "WebP"
+                      : ext === "pdf" ? "PDF"
+                      : ext === "doc" || ext === "docx" ? "Word"
+                      : ext === "xls" || ext === "xlsx" ? "Excel"
+                      : ext === "ppt" || ext === "pptx" ? "PowerPoint"
+                      : ext === "zip" || ext === "rar" || ext === "7z" ? "Archiv"
+                      : ext === "txt" ? "Text"
+                      : ext === "csv" ? "CSV"
+                      : ext.toUpperCase();
+                    typeMap[label] = (typeMap[label] || 0) + 1;
+                  }
+                  const typeEntries = Object.entries(typeMap).sort((a, b) => b[1] - a[1]);
+                  return (
+                    <div className="mb-3 inline-flex flex-wrap items-center gap-1.5 rounded-lg glass px-3 py-1.5 text-xs font-medium glass-text-primary">
+                      <span className="glass-text-muted mr-1">📎</span>
+                      {typeEntries.map(([label, count], i) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => {
+                            document.getElementById(`attachments-group-${label}`)?.scrollIntoView({ behavior: "smooth" });
+                          }}
+                          className="hover:underline hover:opacity-80 transition-opacity"
+                        >
+                          {count} {label}{i < typeEntries.length - 1 ? "," : ""}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          document.getElementById("attachments-section")?.scrollIntoView({ behavior: "smooth" });
+                        }}
+                        className="glass-text-muted ml-1 hover:opacity-80"
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  );
+                })() : null}
 
                 {isLoadingBody ? (
                   <div className="glass rounded-xl p-4 text-sm glass-text-secondary animate-pulse">
@@ -5263,147 +5297,178 @@ export function MailWorkspace() {
                   </div>
                 )}
 
-                {(selectedEmail.attachments?.length ?? 0) > 0 ? (
+                {(selectedEmail.attachments?.length ?? 0) > 0 ? (() => {
+                  const getTypeLabel = (att: Attachment) => {
+                    const ext = (getAttachmentDisplayName(att).split(".").pop() || att.mimeType || "other").toLowerCase();
+                    return ext === "jpg" || ext === "jpeg" ? "JPEG"
+                      : ext === "png" ? "PNG"
+                      : ext === "gif" ? "GIF"
+                      : ext === "webp" ? "WebP"
+                      : ext === "pdf" ? "PDF"
+                      : ext === "doc" || ext === "docx" ? "Word"
+                      : ext === "xls" || ext === "xlsx" ? "Excel"
+                      : ext === "ppt" || ext === "pptx" ? "PowerPoint"
+                      : ext === "zip" || ext === "rar" || ext === "7z" ? "Archiv"
+                      : ext === "txt" ? "Text"
+                      : ext === "csv" ? "CSV"
+                      : ext.toUpperCase();
+                  };
+                  const grouped: Record<string, Attachment[]> = {};
+                  for (const att of selectedEmail.attachments) {
+                    const label = getTypeLabel(att);
+                    (grouped[label] ??= []).push(att);
+                  }
+                  const sortedGroups = Object.entries(grouped).sort((a, b) => b[1].length - a[1].length);
+
+                  return (
                   <div id="attachments-section" className="mt-6 pt-4 border-t glass-divider">
-                    <h3 className="text-sm font-semibold glass-text-primary mb-2">
+                    <h3 className="text-sm font-semibold glass-text-primary mb-3">
                       📎 {selectedEmail.attachments.length} Anhäng{selectedEmail.attachments.length === 1 ? "" : "e"}
                     </h3>
-                    <ul className="space-y-2">
-                      {selectedEmail.attachments.map((attachment) => {
-                        const previewUrl = `/api/emails/${selectedEmail.id}/attachments/${attachment.id}/preview`;
-                        const downloadUrl = `${previewUrl}?download=1`;
-                        return (
-                          <li
-                            key={attachment.id}
-                            className="glass relative rounded-xl p-3 text-sm"
-                          >
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <span className="break-all font-medium glass-text-primary">
-                                  📎 {getAttachmentDisplayName(attachment)}
-                                </span>
-                                <p className="text-xs glass-text-tertiary">
-                                  {attachment.mimeType || "unbekannt"} ·{" "}
-                                  {attachment.size ?? 0} Bytes
-                                </p>
-                                <p className="text-xs glass-text-tertiary">
-                                  Status:{" "}
-                                  {attachment.saveStatus === "saved"
-                                    ? "in Cloud gespeichert"
-                                    : attachment.saveStatus === "error"
-                                      ? "Cloud-Fehler"
-                                      : "nicht in Cloud gespeichert"}
-                                  {attachment.cloudPath
-                                    ? ` · Ziel: ${attachment.cloudPath}`
-                                    : ""}
-                                </p>
-                                {attachment.saveError ? (
-                                  <p className="text-xs text-red-600">{attachment.saveError}</p>
-                                ) : null}
-                              </div>
-                              <div className="flex flex-wrap gap-1">
-                                {getAttachmentPreviewType(attachment) && (
-                                  <button
-                                    onClick={() => setAttachmentPreviewOpen((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(attachment.id)) next.delete(attachment.id);
-                                      else next.add(attachment.id);
-                                      return next;
-                                    })}
+                    {sortedGroups.map(([typeLabel, atts]) => (
+                      <div key={typeLabel} id={`attachments-group-${typeLabel}`} className="mb-4">
+                        <h4 className="text-xs font-semibold glass-text-secondary uppercase tracking-wide mb-2">
+                          {typeLabel} ({atts.length})
+                        </h4>
+                        <ul className="space-y-2">
+                          {atts.map((attachment) => {
+                            const previewUrl = `/api/emails/${selectedEmail.id}/attachments/${attachment.id}/preview`;
+                            const downloadUrl = `${previewUrl}?download=1`;
+                            return (
+                              <li
+                                key={attachment.id}
+                                className="glass relative rounded-xl p-3 text-sm"
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <span className="break-all font-medium glass-text-primary">
+                                      📎 {getAttachmentDisplayName(attachment)}
+                                    </span>
+                                    <p className="text-xs glass-text-tertiary">
+                                      {attachment.mimeType || "unbekannt"} ·{" "}
+                                      {attachment.size ?? 0} Bytes
+                                    </p>
+                                    <p className="text-xs glass-text-tertiary">
+                                      Status:{" "}
+                                      {attachment.saveStatus === "saved"
+                                        ? "in Cloud gespeichert"
+                                        : attachment.saveStatus === "error"
+                                          ? "Cloud-Fehler"
+                                          : "nicht in Cloud gespeichert"}
+                                      {attachment.cloudPath
+                                        ? ` · Ziel: ${attachment.cloudPath}`
+                                        : ""}
+                                    </p>
+                                    {attachment.saveError ? (
+                                      <p className="text-xs text-red-600">{attachment.saveError}</p>
+                                    ) : null}
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {getAttachmentPreviewType(attachment) && (
+                                      <button
+                                        onClick={() => setAttachmentPreviewOpen((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(attachment.id)) next.delete(attachment.id);
+                                          else next.add(attachment.id);
+                                          return next;
+                                        })}
+                                        className="glass-btn rounded-lg px-2 py-1 text-xs"
+                                      >
+                                        {attachmentPreviewOpen.has(attachment.id) ? "Vorschau schließen" : "Vorschau"}
+                                      </button>
+                                    )}
+                                    <a
+                                      href={previewUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="glass-btn rounded-lg px-2 py-1 text-xs"
+                                    >
+                                      Öffnen
+                                    </a>
+                                    <a
+                                      href={downloadUrl}
+                                      className="glass-btn rounded-lg px-2 py-1 text-xs"
+                                    >
+                                      Herunterladen
+                                    </a>
+                                    <button
+                                      onClick={() => {
+                                        const w = window.open(previewUrl, "_blank");
+                                        if (w) {
+                                          w.addEventListener("load", () => {
+                                            try {
+                                              w.print();
+                                            } catch {
+                                              // ignore
+                                            }
+                                          });
+                                        }
+                                      }}
+                                      className="glass-btn rounded-lg px-2 py-1 text-xs"
+                                    >
+                                      Drucken
+                                    </button>
+                                  </div>
+                                </div>
+                                {attachmentPreviewOpen.has(attachment.id) && getAttachmentPreviewType(attachment) && (
+                                  <div className="mt-2 overflow-hidden rounded-lg border glass-divider">
+                                    {getAttachmentPreviewType(attachment) === "image" ? (
+                                      <img
+                                        src={previewUrl}
+                                        alt={getAttachmentDisplayName(attachment)}
+                                        className="max-h-[400px] w-full object-contain bg-gray-50"
+                                      />
+                                    ) : (
+                                      <iframe
+                                        src={previewUrl}
+                                        title={getAttachmentDisplayName(attachment)}
+                                        className="h-[500px] w-full"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="mt-2 flex flex-wrap gap-2 border-t border-gray-100 pt-2">
+                                  <select
+                                    value={getAttachmentTarget(attachment.id).provider}
+                                    onChange={(e) =>
+                                      updateAttachmentTarget(attachment.id, {
+                                        provider: e.target.value as
+                                          | "google_drive"
+                                          | "onedrive"
+                                          | "mock",
+                                      })
+                                    }
                                     className="glass-btn rounded-lg px-2 py-1 text-xs"
                                   >
-                                    {attachmentPreviewOpen.has(attachment.id) ? "Vorschau schließen" : "Vorschau"}
-                                  </button>
-                                )}
-                                <a
-                                  href={previewUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="glass-btn rounded-lg px-2 py-1 text-xs"
-                                >
-                                  Öffnen
-                                </a>
-                                <a
-                                  href={downloadUrl}
-                                  className="glass-btn rounded-lg px-2 py-1 text-xs"
-                                >
-                                  Herunterladen
-                                </a>
-                                <button
-                                  onClick={() => {
-                                    const w = window.open(previewUrl, "_blank");
-                                    if (w) {
-                                      w.addEventListener("load", () => {
-                                        try {
-                                          w.print();
-                                        } catch {
-                                          // ignore
-                                        }
-                                      });
+                                    <option value="google_drive">Google Drive</option>
+                                    <option value="onedrive">OneDrive</option>
+                                  </select>
+                                  <input
+                                    value={getAttachmentTarget(attachment.id).targetPath}
+                                    onChange={(e) =>
+                                      updateAttachmentTarget(attachment.id, {
+                                        targetPath: e.target.value,
+                                      })
                                     }
-                                  }}
-                                  className="glass-btn rounded-lg px-2 py-1 text-xs"
-                                >
-                                  Drucken
-                                </button>
-                              </div>
-                            </div>
-                            {attachmentPreviewOpen.has(attachment.id) && getAttachmentPreviewType(attachment) && (
-                              <div className="mt-2 overflow-hidden rounded-lg border glass-divider">
-                                {getAttachmentPreviewType(attachment) === "image" ? (
-                                  <img
-                                    src={previewUrl}
-                                    alt={getAttachmentDisplayName(attachment)}
-                                    className="max-h-[400px] w-full object-contain bg-gray-50"
+                                    className="glass-select min-w-[180px] flex-1 rounded-lg px-2 py-1 text-xs"
                                   />
-                                ) : (
-                                  <iframe
-                                    src={previewUrl}
-                                    title={getAttachmentDisplayName(attachment)}
-                                    className="h-[500px] w-full"
-                                  />
-                                )}
-                              </div>
-                            )}
-
-                            <div className="mt-2 flex flex-wrap gap-2 border-t border-gray-100 pt-2">
-                              <select
-                                value={getAttachmentTarget(attachment.id).provider}
-                                onChange={(e) =>
-                                  updateAttachmentTarget(attachment.id, {
-                                    provider: e.target.value as
-                                      | "google_drive"
-                                      | "onedrive"
-                                      | "mock",
-                                  })
-                                }
-                                className="glass-btn rounded-lg px-2 py-1 text-xs"
-                              >
-                                <option value="google_drive">Google Drive</option>
-                                <option value="onedrive">OneDrive</option>
-                              </select>
-                              <input
-                                value={getAttachmentTarget(attachment.id).targetPath}
-                                onChange={(e) =>
-                                  updateAttachmentTarget(attachment.id, {
-                                    targetPath: e.target.value,
-                                  })
-                                }
-                                className="glass-select min-w-[180px] flex-1 rounded-lg px-2 py-1 text-xs"
-                              />
-                              <button
-                                onClick={() => saveAttachmentToCloud(attachment.id)}
-                                className="glass-btn rounded-lg px-2 py-1 text-xs"
-                              >
-                                In Cloud speichern
-                              </button>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                                  <button
+                                    onClick={() => saveAttachmentToCloud(attachment.id)}
+                                    className="glass-btn rounded-lg px-2 py-1 text-xs"
+                                  >
+                                    In Cloud speichern
+                                  </button>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ))}
                   </div>
-                ) : null}
+                  );
+                })() : null}
 
                 {selectedEmailCandidates.length > 0 ? (
                   <div className="glass mt-4 rounded-xl p-3 text-sm">
