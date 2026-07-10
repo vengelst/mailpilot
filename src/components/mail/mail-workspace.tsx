@@ -2258,6 +2258,21 @@ export function MailWorkspace() {
     const ids = explicitIds?.length ? explicitIds : Array.from(selectedIds);
     if (ids.length === 0) return;
     if (action === "move_folder" && !options?.targetFolder) return;
+
+    const isMove = action === "move_trash" || action === "move_spam" || action === "move_folder";
+    const prevEmails = emails;
+    const idsSet = new Set(ids);
+
+    if (isMove) {
+      setEmails((prev) => prev.filter((e) => !idsSet.has(e.id)));
+      if (selectedEmail && idsSet.has(selectedEmail.id)) {
+        setSelectedEmail(null);
+        setMobilePane("middle");
+        setEmailDetailMenuOpen(false);
+      }
+    }
+
+    clearSelection();
     setBulkBusy(true);
     setUiInfo("");
     setUiError("");
@@ -2273,6 +2288,7 @@ export function MailWorkspace() {
       });
       const data = await res.json().catch(() => ({}) as Record<string, unknown>);
       if (!res.ok) {
+        if (isMove) setEmails(prevEmails);
         setUiError(
           (data as { error?: string }).error ??
             `Bulk-Aktion fehlgeschlagen (HTTP ${res.status}).`,
@@ -2290,9 +2306,10 @@ export function MailWorkspace() {
         ].filter(Boolean);
         setUiInfo(`Bulk-Aktion: ${parts.join(", ")}.`);
       }
-      clearSelection();
-      await loadEmails();
-      await reloadFolders();
+      if (!isMove) {
+        await loadEmails();
+      }
+      void reloadFolders();
     } finally {
       setBulkBusy(false);
     }
