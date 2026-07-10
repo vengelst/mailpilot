@@ -16,6 +16,7 @@ enum BlockedSenderAction {
   move_spam
   mark_newsletter
   ignore
+  allow_inbox
 }
 
 enum ContactCandidateStatus {

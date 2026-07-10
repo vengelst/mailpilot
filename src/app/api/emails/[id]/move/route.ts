@@ -8,7 +8,7 @@ import { writeAuditLog } from "@/server/audit/auditLog";
 
 const schema = z.object({
   targetFolder: z.string().optional(),
-  targetSpecial: z.enum(["trash", "spam"]).optional(),
+  targetSpecial: z.enum(["trash", "spam", "inbox"]).optional(),
 });
 
 async function resolveId(params: Promise<{ id: string }> | { id: string }) {

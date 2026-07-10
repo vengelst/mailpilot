@@ -783,7 +783,7 @@ export async function moveIndexedEmail(emailId: string, userId: string, targetFo
 export async function moveIndexedEmailToSpecial(
   emailId: string,
   userId: string,
-  target: "trash" | "spam",
+  target: "trash" | "spam" | "inbox",
 ): Promise<{ path: string; newUid: bigint | null }> {
   const email = await prisma.emailIndex.findFirst({
     where: { id: emailId, account: { userId } },

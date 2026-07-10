@@ -208,6 +208,13 @@ export async function runSpamCheckJob(input: {
     return { processedEmails: 0, flagged: 0, moved: 0 };
   }
 
+  const safeSenders = await prisma.blockedSender.findMany({
+    where: { userId: input.userId, action: "allow_inbox", active: true },
+    select: { email: true, domain: true },
+  });
+  const safeEmails = new Set(safeSenders.filter((s) => s.email).map((s) => s.email!.toLowerCase()));
+  const safeDomains = safeSenders.filter((s) => s.domain).map((s) => s.domain!.toLowerCase());
+
   const emails = await prisma.emailIndex.findMany({
     where: {
       id: { in: input.emailIds },
@@ -233,6 +240,12 @@ export async function runSpamCheckJob(input: {
 
   for (const email of emails) {
     if (looksLikeSpamFolder(email.folderPath)) continue;
+
+    const from = (email.fromEmail ?? "").toLowerCase();
+    const fromDom = senderDomain(from);
+    if (safeEmails.has(from) || safeDomains.some((d) => fromDom === d || fromDom.endsWith(`.${d}`))) {
+      continue;
+    }
 
     const { signals } = scoreSpam(email);
     // Boost score if AI classification also flags this email as spam with high confidence

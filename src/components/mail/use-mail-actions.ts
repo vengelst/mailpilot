@@ -236,6 +236,37 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
     }
   }
 
+  async function markAsNotSpam(email: Email) {
+    s.setUiError("");
+    const sender = email.fromEmail?.toLowerCase().trim() ?? "";
+
+    await runActionForEmail(email.id, `/api/emails/${email.id}/move`, {
+      targetSpecial: "inbox",
+    });
+
+    const actionsDone: string[] = ["Mail in Posteingang verschoben"];
+    if (sender) {
+      const allowRes = await fetch("/api/blocklist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: sender,
+          action: "allow_inbox",
+          note: "Per Kontextmenü als sicherer Absender markiert",
+        }),
+      });
+      if (allowRes.ok) {
+        actionsDone.push("Absender für künftige Mails als sicher markiert");
+      } else {
+        s.setUiError(await readErrorMessage(allowRes, "Absender-Regel konnte nicht gespeichert werden."));
+      }
+    }
+
+    if (actionsDone.length > 0) {
+      s.setUiInfo(`${actionsDone.join(" · ")}.`);
+    }
+  }
+
   async function blockSender() {
     if (!s.selectedEmail?.fromEmail) return;
     const res = await fetch("/api/blocklist", {
@@ -937,6 +968,7 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
     runBulk,
     emptyCurrentFolder,
     markAsSpamAndLearn,
+    markAsNotSpam,
     blockSender,
     blockDomain,
     setLocalFlag,

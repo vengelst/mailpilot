@@ -1100,10 +1100,12 @@ export async function moveMessageToSpecialFolder(
   config: ImapAccountConfig,
   fromFolder: string,
   uid: bigint,
-  type: "trash" | "spam",
+  type: "trash" | "spam" | "inbox",
 ): Promise<{ path: string; newUid: bigint | null }> {
   const folders = await listImapFolders(config);
-  const target = folders.find((folder) => folder.specialUse === type);
+  const target = type === "inbox"
+    ? folders.find((folder) => folder.specialUse === "inbox") ?? folders.find((folder) => /^inbox$/i.test(folder.path))
+    : folders.find((folder) => folder.specialUse === type);
   if (!target) {
     throw new Error(`No ${type} folder found on IMAP server`);
   }

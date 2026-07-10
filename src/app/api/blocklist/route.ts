@@ -8,7 +8,7 @@ import { writeAuditLog } from "@/server/audit/auditLog";
 const schema = z.object({
   email: z.string().email().optional(),
   domain: z.string().optional(),
-  action: z.enum(["move_trash", "move_spam", "mark_newsletter", "ignore"]),
+  action: z.enum(["move_trash", "move_spam", "mark_newsletter", "ignore", "allow_inbox"]),
   note: z.string().max(500).optional(),
   active: z.boolean().optional(),
 });

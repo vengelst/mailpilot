@@ -121,15 +121,26 @@ export function MailContextMenu({ s, actions, sync }: Props) {
           In den Papierkorb
         </button>
         {!isBulk ? (
-          <button
-            className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-50"
-            onClick={() => {
-              void actions.markAsSpamAndLearn(email);
-              close();
-            }}
-          >
-            Als Spam lernen (Absender + Inhalt)
-          </button>
+          <>
+            <button
+              className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-50"
+              onClick={() => {
+                void actions.markAsSpamAndLearn(email);
+                close();
+              }}
+            >
+              Als Spam lernen (Absender + Inhalt)
+            </button>
+            <button
+              className="block w-full rounded px-2 py-1.5 text-left text-sm text-green-600 hover:bg-gray-50"
+              onClick={() => {
+                void actions.markAsNotSpam(email);
+                close();
+              }}
+            >
+              Kein Spam – Absender sicher
+            </button>
+          </>
         ) : (
           <button
             className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-50"
