@@ -1,6 +1,16 @@
+/**
+ * @module spamCheckJob
+ *
+ * Rule-based spam detection job that scores incoming emails against known
+ * spam patterns (subject lines, body text, sender domains, link domains)
+ * and optionally incorporates AI classification confidence. Emails exceeding
+ * the score threshold are moved to the spam folder automatically.
+ */
+
 import { prisma } from "@/server/db/prisma";
 import { moveIndexedEmailToSpecial } from "@/server/imap/imapService";
 
+/** Represents a single spam signal with a human-readable reason and numeric weight. */
 type SpamSignal = {
   reason: string;
   score: number;
@@ -41,12 +51,22 @@ const BRAND_DOMAIN_RULES: Array<{ brand: RegExp; domains: string[] }> = [
   { brand: /\bdocusign\b/i, domains: ["docusign.com", "docusign.net", "docusign.de"] },
 ];
 
+/**
+ * Extracts the domain part from an email address string.
+ * @param from - Raw "from" email address
+ * @returns Lowercased domain, or empty string if no "@" found
+ */
 function senderDomain(from: string) {
   const at = from.lastIndexOf("@");
   if (at < 0) return "";
   return from.slice(at + 1).trim().toLowerCase();
 }
 
+/**
+ * Parses all HTTP(S) URLs from a text block and returns their hostnames.
+ * @param text - Combined body/preview text to scan
+ * @returns Array of lowercased hostnames found in URLs
+ */
 function extractUrlDomains(text: string) {
   const matches = text.match(/https?:\/\/[^\s)>"']+/gi) ?? [];
   const domains: string[] = [];
@@ -61,10 +81,22 @@ function extractUrlDomains(text: string) {
   return domains;
 }
 
+/**
+ * Checks whether a domain matches any entry in the expected list (exact or subdomain).
+ * @param domain - Domain to verify
+ * @param expected - Whitelist of legitimate domains
+ */
 function domainMatchesAny(domain: string, expected: string[]) {
   return expected.some((d) => domain === d || domain.endsWith(`.${d}`));
 }
 
+/**
+ * Computes a cumulative spam score for a given email by matching subject,
+ * body, sender domain, and embedded URLs against known spam heuristics.
+ *
+ * @param email - Partial email record with subject, preview, body and sender fields
+ * @returns Object containing the total score and the list of triggered signals
+ */
 function scoreSpam(email: {
   subject: string | null;
   textPreview: string | null;
@@ -149,10 +181,21 @@ function scoreSpam(email: {
   return { totalScore, signals };
 }
 
+/** Returns true if the folder path already represents a spam/junk folder. */
 function looksLikeSpamFolder(path: string) {
   return /spam|junk|unerw(ü|ue)nscht|werbung/i.test(path);
 }
 
+/**
+ * Main entry point: scores a batch of emails for spam and moves those
+ * exceeding the threshold to the user's spam folder via IMAP.
+ *
+ * @param input.userId - Owner of the mailbox
+ * @param input.emailIds - IDs of emails to evaluate
+ * @param input.threshold - Minimum score to classify as spam (default 4)
+ * @param input.aiMinConfidenceForSpam - AI confidence floor to trust AI spam label (default 0.98)
+ * @returns Summary with counts of processed, flagged, and successfully moved emails
+ */
 export async function runSpamCheckJob(input: {
   userId: string;
   emailIds: string[];
@@ -192,6 +235,7 @@ export async function runSpamCheckJob(input: {
     if (looksLikeSpamFolder(email.folderPath)) continue;
 
     const { signals } = scoreSpam(email);
+    // Boost score if AI classification also flags this email as spam with high confidence
     const aiSuggestsSpam =
       (email.aiCategory === "spam" || email.aiRecommendedAction === "mark_spam") &&
       (email.aiConfidence ?? 0) >= aiMinConfidenceForSpam;

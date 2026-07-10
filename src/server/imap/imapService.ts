@@ -1,3 +1,19 @@
+/**
+ * IMAP Service Layer
+ *
+ * High-level orchestration between the IMAP protocol client (`imapClient`)
+ * and the Prisma database layer. This module owns:
+ *   - Account credential resolution and decryption
+ *   - Folder CRUD (create, rename, copy, delete) with local DB bookkeeping
+ *   - Incremental and full email synchronisation (envelope + flags + body cache)
+ *   - Message operations: mark read/unread, move, bulk actions
+ *   - Attachment download
+ *   - Permanent purge of Trash/Spam folders (the only destructive IMAP path)
+ *
+ * All IMAP interactions go through `imapClient` helpers; this module never
+ * opens raw TCP sockets itself.
+ */
+
 import { prisma } from "@/server/db/prisma";
 import { decryptSecret } from "@/server/security/crypto";
 import {
@@ -89,11 +105,20 @@ const BIG_ZERO = BigInt(0);
 const BIG_ONE = BigInt(1);
 const FULL_SYNC_BATCH_SIZE = 100;
 
+/** Safely converts a nullable BigInt to a string for JSON-serializable results. */
 function bigIntToString(value: bigint | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   return value.toString();
 }
 
+/**
+ * Resolves and decrypts the IMAP connection configuration for a mail account.
+ *
+ * @param accountId - The database ID of the mail account.
+ * @param userId - The owning user's ID (used for access control).
+ * @returns The raw account record and a ready-to-use IMAP config with decrypted password.
+ * @throws If the account does not exist or does not belong to the user.
+ */
 export async function getAccountConfig(accountId: string, userId: string) {
   const account = await prisma.mailAccount.findFirst({
     where: { id: accountId, userId },
@@ -114,11 +139,29 @@ export async function getAccountConfig(accountId: string, userId: string) {
   };
 }
 
+/**
+ * Tests whether the IMAP server is reachable with the stored credentials.
+ *
+ * @param accountId - The database ID of the mail account.
+ * @param userId - The owning user's ID.
+ * @returns The connection test result from the low-level IMAP client.
+ */
 export async function testAccountConnection(accountId: string, userId: string) {
   const { config } = await getAccountConfig(accountId, userId);
   return testImapConnection(config);
 }
 
+/**
+ * Synchronises the list of IMAP mailbox folders into the local database.
+ *
+ * Fetches the full folder tree from the IMAP server and upserts each entry
+ * into `MailFolder`. This ensures local state reflects renames, new folders,
+ * and flag changes without touching message data.
+ *
+ * @param accountId - The database ID of the mail account.
+ * @param userId - The owning user's ID.
+ * @returns The raw list of IMAP folders returned by the server.
+ */
 export async function syncFolders(accountId: string, userId: string) {
   const { config } = await getAccountConfig(accountId, userId);
   const folders = await listImapFolders(config);
@@ -151,10 +194,12 @@ export async function syncFolders(accountId: string, userId: string) {
   return folders;
 }
 
+/** Strips leading/trailing slashes and whitespace from a folder path. */
 function normalizeFolderPath(value: string) {
   return value.trim().replace(/^\/+|\/+$/g, "");
 }
 
+/** Guards against destructive operations on system-protected folders (e.g. INBOX). */
 async function assertFolderNotProtected(
   folderPath: string,
   kind: "delete" | "rename" | "copy",
@@ -166,6 +211,15 @@ async function assertFolderNotProtected(
   }
 }
 
+/**
+ * Creates a new IMAP folder on the server and syncs the folder list.
+ *
+ * @param input.accountId - The mail account ID.
+ * @param input.userId - The owning user's ID.
+ * @param input.folderPath - The desired folder path/name.
+ * @returns The updated folder list after creation.
+ * @throws If the folder name is empty.
+ */
 export async function createFolderForAccount(input: {
   accountId: string;
   userId: string;
@@ -178,6 +232,18 @@ export async function createFolderForAccount(input: {
   return syncFolders(input.accountId, input.userId);
 }
 
+/**
+ * Deletes an IMAP folder and removes all associated local index data.
+ *
+ * Protected folders (e.g. INBOX) cannot be deleted. After the IMAP deletion,
+ * both the EmailIndex entries and the MailFolder row for this path are purged.
+ *
+ * @param input.accountId - The mail account ID.
+ * @param input.userId - The owning user's ID.
+ * @param input.folderPath - The folder to delete.
+ * @returns The updated folder list after deletion.
+ * @throws If the folder is protected or does not exist.
+ */
 export async function deleteFolderForAccount(input: {
   accountId: string;
   userId: string;
@@ -193,6 +259,16 @@ export async function deleteFolderForAccount(input: {
   return syncFolders(input.accountId, input.userId);
 }
 
+/**
+ * Renames an IMAP folder and updates all local references (index + folder row).
+ *
+ * @param input.accountId - The mail account ID.
+ * @param input.userId - The owning user's ID.
+ * @param input.fromPath - The current folder path.
+ * @param input.toPath - The desired new folder path.
+ * @returns The updated folder list after renaming.
+ * @throws If either path is empty or the source folder is protected.
+ */
 export async function renameFolderForAccount(input: {
   accountId: string;
   userId: string;
@@ -216,6 +292,19 @@ export async function renameFolderForAccount(input: {
   return syncFolders(input.accountId, input.userId);
 }
 
+/**
+ * Copies all messages from one IMAP folder into a new target folder.
+ *
+ * Creates the target folder first, then performs a server-side COPY of all
+ * messages. Finally syncs the folder list so the new folder appears locally.
+ *
+ * @param input.accountId - The mail account ID.
+ * @param input.userId - The owning user's ID.
+ * @param input.fromPath - The source folder to copy from.
+ * @param input.toPath - The target folder to create and copy into.
+ * @returns The updated folder list.
+ * @throws If either path is empty or the source folder is protected.
+ */
 export async function copyFolderForAccount(input: {
   accountId: string;
   userId: string;
@@ -232,6 +321,18 @@ export async function copyFolderForAccount(input: {
   return syncFolders(input.accountId, input.userId);
 }
 
+/**
+ * Persists fetched IMAP message metadata into the local EmailIndex.
+ *
+ * Processes messages in batches of 50 within a Prisma transaction to keep
+ * memory usage bounded. For each batch, upserts envelope data and rebuilds
+ * the attachment list (delete-all + createMany pattern avoids stale entries).
+ *
+ * @param accountId - The mail account these messages belong to.
+ * @param folderPath - The IMAP folder path the messages live in.
+ * @param messages - Array of IMAP message metadata to upsert.
+ * @returns Array of database IDs for all upserted EmailIndex rows.
+ */
 async function upsertFetchedMessages(
   accountId: string,
   folderPath: string,
@@ -242,6 +343,7 @@ async function upsertFetchedMessages(
   const BATCH_SIZE = 50;
   const emailIds: string[] = [];
 
+  // Process in batches of 50 to avoid oversized Prisma transactions
   for (let i = 0; i < messages.length; i += BATCH_SIZE) {
     const batch = messages.slice(i, i + BATCH_SIZE);
     const results = await prisma.$transaction(
@@ -294,7 +396,7 @@ async function upsertFetchedMessages(
     const batchIds = results.map((r) => r.id);
     emailIds.push(...batchIds);
 
-    // Batch attachment handling
+    // Rebuild attachments: delete-all + createMany avoids orphaned/stale rows
     await prisma.emailAttachment.deleteMany({
       where: { emailId: { in: batchIds } },
     });
@@ -314,6 +416,7 @@ async function upsertFetchedMessages(
   return emailIds;
 }
 
+/** Ensures a MailFolder row exists in the DB, creating a minimal stub if absent. */
 async function getOrCreateFolderRow(accountId: string, folderPath: string) {
   return prisma.mailFolder.upsert({
     where: { accountId_path: { accountId, path: folderPath } },
@@ -445,6 +548,7 @@ export async function syncFolderEmailsIncremental(
       const uidValidityChanged =
         storedUidValidity !== null && storedUidValidity !== status.uidValidity;
 
+      // UIDVALIDITY changed: all stored UIDs are invalid — wipe and rebuild
       if (uidValidityChanged) {
         await prisma.emailIndex.deleteMany({ where: { accountId, folderPath } });
         await prisma.mailFolder.update({
@@ -491,21 +595,25 @@ export async function syncFolderEmailsIncremental(
         };
       }
 
+      // Fetch only messages newer than our last checkpoint (UID > lastSeenUid)
       const lastSeenUid = folderRow.lastSeenUid;
       let newMessages: ImapMessageMeta[] = [];
       if (status.exists > 0) {
         const nextUid = lastSeenUid + BIG_ONE;
         const range = `${nextUid.toString()}:*`;
         newMessages = await session.fetchNewMessages(range);
+        // IMAP "UID:*" may include lastSeenUid itself if no newer messages exist — filter it
         if (lastSeenUid > BIG_ZERO) {
           newMessages = newMessages.filter((m) => m.uid > lastSeenUid);
         }
       }
       const newEmailIds = await upsertFetchedMessages(accountId, folderPath, newMessages);
 
+      // --- Flag refresh for previously-known messages ---
       let flagsUpdated = 0;
       let removedFromIndex = 0;
       if (lastSeenUid > BIG_ZERO) {
+        // Fetch current flag state from IMAP for all UIDs up to lastSeenUid
         const flagRange = `1:${lastSeenUid.toString()}`;
         const flagSnapshots =
           status.exists > 0
@@ -525,7 +633,7 @@ export async function syncFolderEmailsIncremental(
           indexedRows.map((row) => [row.imapUid, row]),
         );
 
-        // Batch flag updates
+        // Detect flag differences by sorted comparison (order-insensitive)
         const flagUpdates: Array<{ id: string; flags: string[] }> = [];
         for (const snapshot of flagSnapshots) {
           const existing = indexedByUid.get(snapshot.uid);
@@ -548,6 +656,8 @@ export async function syncFolderEmailsIncremental(
           flagsUpdated = flagUpdates.length;
         }
 
+        // Remove local index entries for UIDs that no longer exist on server
+        // (e.g. messages permanently deleted or moved by another client)
         const goneIds = indexedRows
           .filter((row) => !serverUids.has(row.imapUid))
           .map((row) => row.id);
@@ -563,6 +673,7 @@ export async function syncFolderEmailsIncremental(
         }
       }
 
+      // Advance the high-water mark to the highest UID we've seen
       let nextLastSeenUid = lastSeenUid;
       for (const m of newMessages) {
         if (m.uid > nextLastSeenUid) nextLastSeenUid = m.uid;
@@ -616,6 +727,14 @@ export async function syncFolderEmails(
   return syncFolderEmailsIncremental(accountId, userId, folderPath);
 }
 
+/**
+ * Sets or removes the \Seen flag on an email via IMAP.
+ *
+ * @param emailId - The local EmailIndex row ID.
+ * @param userId - The owning user's ID (access control).
+ * @param seen - `true` to mark as read, `false` to mark as unread.
+ * @throws If the email does not exist or does not belong to the user.
+ */
 export async function markEmailSeen(emailId: string, userId: string, seen: boolean) {
   const email = await prisma.emailIndex.findFirst({
     where: {
@@ -630,6 +749,15 @@ export async function markEmailSeen(emailId: string, userId: string, seen: boole
   await setMessageSeen(config, email.folderPath, email.imapUid, seen);
 }
 
+/**
+ * Moves an email to a specific target folder using IMAP MOVE.
+ *
+ * @param emailId - The local EmailIndex row ID.
+ * @param userId - The owning user's ID.
+ * @param targetFolder - The IMAP folder path to move the message into.
+ * @returns The new UID assigned by the destination folder, or null if unknown.
+ * @throws If the email does not exist or does not belong to the user.
+ */
 export async function moveIndexedEmail(emailId: string, userId: string, targetFolder: string): Promise<bigint | null> {
   const email = await prisma.emailIndex.findFirst({
     where: { id: emailId, account: { userId } },
@@ -640,6 +768,18 @@ export async function moveIndexedEmail(emailId: string, userId: string, targetFo
   return newUid;
 }
 
+/**
+ * Moves an email to a special-use folder (Trash or Spam) using IMAP.
+ *
+ * The target folder is resolved via the server's special-use attributes,
+ * so it works regardless of the provider's naming convention.
+ *
+ * @param emailId - The local EmailIndex row ID.
+ * @param userId - The owning user's ID.
+ * @param target - Either "trash" or "spam".
+ * @returns The resolved folder path and the new UID (if the server reports it).
+ * @throws If the email does not exist or does not belong to the user.
+ */
 export async function moveIndexedEmailToSpecial(
   emailId: string,
   userId: string,
@@ -665,6 +805,20 @@ export async function moveIndexedEmailToSpecial(
  * `{ force: true }` to bypass the cache (e.g. when the user explicitly
  * requests a refresh). NEVER touch IMAP messages — read-only fetch only.
  */
+/**
+ * Attempts to resolve the correct IMAP UID for a message whose stored UID
+ * may have become stale (e.g. after server-side compaction or UIDVALIDITY
+ * change that was missed).
+ *
+ * Strategy:
+ *   1. Try matching by RFC-822 Message-ID header (most reliable).
+ *   2. Fall back to SEARCH by subject + date (heuristic).
+ *   3. Return null if neither method yields a result.
+ *
+ * @param config - Decrypted IMAP connection config.
+ * @param email - The locally stored email metadata with potential UID.
+ * @returns The resolved UID, or null if the message cannot be located.
+ */
 async function resolveCorrectUid(
   config: ImapAccountConfig,
   email: { messageId: string | null; folderPath: string; imapUid: bigint; subject?: string | null; date?: Date | null },
@@ -682,6 +836,22 @@ async function resolveCorrectUid(
   return null;
 }
 
+/**
+ * Loads the full message body (text, HTML, plain) for a given email.
+ *
+ * Implements a local cache: if the body was previously fetched and stored in
+ * `EmailIndex.bodyFetchedAt`, the cached version is returned without IMAP access.
+ * Pass `options.force` to bypass the cache and re-fetch from IMAP.
+ *
+ * If the initial fetch returns empty content (possibly due to a stale UID),
+ * a UID re-resolution is attempted before giving up.
+ *
+ * @param emailId - The local EmailIndex row ID.
+ * @param userId - The owning user's ID.
+ * @param options.force - If true, always fetch from IMAP regardless of cache state.
+ * @returns The body content (text, html, textFromHtml) and whether it was served from cache.
+ * @throws If the email does not exist or does not belong to the user.
+ */
 export async function loadMessageBody(
   emailId: string,
   userId: string,
@@ -705,6 +875,7 @@ export async function loadMessageBody(
   });
   if (!email) throw new Error("Email not found");
 
+  // Cache hit: return stored body without IMAP round-trip
   const cachedEmpty = email.bodyFetchedAt && !email.bodyHtml && !email.bodyText;
   if (!options?.force && email.bodyFetchedAt && !cachedEmpty) {
     return {
@@ -719,6 +890,7 @@ export async function loadMessageBody(
 
   let body = await fetchMessageBody(config, email.folderPath, email.imapUid);
 
+  // Fallback: if body is empty, the stored UID may be stale — try to re-resolve
   if (!body.text && !body.html) {
     const resolvedUid = await resolveCorrectUid(config, email);
     if (resolvedUid && resolvedUid !== email.imapUid) {
@@ -753,6 +925,15 @@ export async function loadMessageBody(
   return { ...body, cached: false };
 }
 
+/**
+ * Downloads a specific attachment's binary content from IMAP.
+ *
+ * @param userId - The owning user's ID.
+ * @param emailId - The local EmailIndex row ID.
+ * @param attachmentId - The local EmailAttachment row ID.
+ * @returns The email record, attachment metadata, and raw binary content.
+ * @throws If the email, attachment, or IMAP part ID is not found.
+ */
 export async function loadAttachmentContent(
   userId: string,
   emailId: string,
@@ -840,14 +1021,14 @@ export async function runBulkEmailAction(input: {
   const ownedById = new Map(owned.map((row) => [row.id, row]));
 
   const outcomes: BulkOutcome[] = [];
-  // Group by accountId so we resolve account credentials once per account.
+  // Group emails by accountId to batch credential lookups and IMAP sessions
   const byAccount = new Map<string, typeof owned>();
   for (const row of owned) {
     const list = byAccount.get(row.accountId) ?? [];
     list.push(row);
     byAccount.set(row.accountId, list);
   }
-  // emails that do not belong to this user → reject them up front
+  // Reject emails not owned by this user before any IMAP interaction
   for (const id of input.emailIds) {
     if (!ownedById.has(id)) {
       outcomes.push({ emailId: id, status: "rejected", reason: "not owned by user" });
@@ -945,7 +1126,7 @@ export async function runBulkEmailAction(input: {
         }
       }
     } else {
-      // mark_read / mark_unread — individual per message (flag operations are UID-specific)
+      // mark_read / mark_unread — applied individually per message (IMAP flag ops are UID-scoped)
       for (const row of rows) {
         try {
           if (input.action === "mark_read") {
@@ -995,6 +1176,10 @@ const SPAM_PATH_PATTERNS = [/spam/i, /junk/i, /unerw(ü|ue)nscht/i, /werbung/i];
 const TRASH_FLAGS = new Set(["\\Trash"]);
 const SPAM_FLAGS = new Set(["\\Junk"]);
 
+/**
+ * Classifies a folder as "trash", "spam", or neither based on IMAP flags,
+ * special-use attributes, and well-known path naming conventions (multilingual).
+ */
 function classifyFolderForPurge(
   folder: { path: string; flags?: string[] | null; specialUse?: string },
 ): "trash" | "spam" | null {

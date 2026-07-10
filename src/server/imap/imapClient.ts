@@ -1,7 +1,20 @@
+/**
+ * IMAP Client Module
+ *
+ * Provides a low-level abstraction over the ImapFlow library for all IMAP
+ * operations used by MailPilot: connecting to accounts, listing/managing
+ * folders, fetching message metadata and bodies, moving/deleting messages,
+ * downloading attachments, and performing UID-based searches.
+ *
+ * Each exported function manages its own connection lifecycle (connect → operate → logout).
+ * For multi-step operations that should share a single TLS connection, use `withImapSession`.
+ */
+
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { Readable } from "node:stream";
 
+/** IMAP account credentials and connection settings. */
 export type ImapAccountConfig = {
   host: string;
   port: number;
@@ -10,21 +23,26 @@ export type ImapAccountConfig = {
   password: string;
 };
 
+/** Metadata for a single IMAP folder (mailbox), including its detected special-use role. */
 export type ImapFolderInfo = {
   path: string;
   displayName: string;
   delimiter?: string;
   flags?: string[];
+  /** Normalized role: "inbox" | "sent" | "trash" | "spam" | "archive" | undefined */
   specialUse?: string;
 };
 
+/** Lightweight metadata about a message attachment (extracted from BODYSTRUCTURE). */
 export type ImapAttachmentMeta = {
   filename?: string;
   mimeType?: string;
   size?: number;
+  /** IMAP part identifier used to download this specific attachment. */
   partId?: string;
 };
 
+/** Full envelope and structure metadata for a single IMAP message. */
 export type ImapMessageMeta = {
   uid: bigint;
   messageId?: string;
@@ -34,7 +52,9 @@ export type ImapMessageMeta = {
   toEmails: string[];
   ccEmails: string[];
   date?: Date;
+  /** Short text preview (max 140 chars) for list views. */
   snippet?: string;
+  /** Longer plain-text preview (max 240 chars) derived from body. */
   textPreview?: string;
   hasAttachments: boolean;
   attachmentCount: number;
@@ -43,6 +63,7 @@ export type ImapMessageMeta = {
   attachments: ImapAttachmentMeta[];
 };
 
+/** Create a new ImapFlow client instance with logging disabled. */
 function buildClient(config: ImapAccountConfig) {
   return new ImapFlow({
     host: config.host,
@@ -56,6 +77,10 @@ function buildClient(config: ImapAccountConfig) {
   });
 }
 
+/**
+ * Heuristically determine a folder's special-use role from its IMAP flags
+ * and path name. Handles both standard RFC 6154 flags and common localized names.
+ */
 function detectSpecialUse(path: string, flags: string[] = []) {
   const lower = path.toLowerCase();
   if (flags.includes("\\Inbox") || lower === "inbox") return "inbox";
@@ -66,6 +91,7 @@ function detectSpecialUse(path: string, flags: string[] = []) {
   return undefined;
 }
 
+/** Return the first non-empty string from a list of candidates. */
 function pickString(...candidates: unknown[]) {
   for (const candidate of candidates) {
     if (typeof candidate === "string") {
@@ -76,6 +102,7 @@ function pickString(...candidates: unknown[]) {
   return undefined;
 }
 
+/** Return the first finite number from a list of candidates (coercing bigint/string). */
 function pickNumber(...candidates: unknown[]) {
   for (const candidate of candidates) {
     if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
@@ -88,10 +115,16 @@ function pickNumber(...candidates: unknown[]) {
   return undefined;
 }
 
+/** Safely cast a value to a record if it's a non-null object. */
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+/**
+ * Recursively walk the BODYSTRUCTURE tree and extract attachment metadata.
+ * Distinguishes true attachments from inline text parts by checking
+ * disposition, filename presence, and MIME type.
+ */
 function collectAttachments(structure: unknown, output: ImapAttachmentMeta[] = []): ImapAttachmentMeta[] {
   if (!structure || typeof structure !== "object") return output;
 
@@ -115,6 +148,9 @@ function collectAttachments(structure: unknown, output: ImapAttachmentMeta[] = [
   const partId = pickString(part.part, part.partID, part.partId);
   const size = pickNumber(part.size, part.byteLength, part.length, part.bytes);
 
+  // Classify the part: skip text/plain and text/html body parts,
+  // but treat anything with an explicit "attachment" disposition, an inline
+  // with a filename, or a non-text MIME part with a partId as an attachment.
   const isTextBody = type === "text" && (subtype === "plain" || subtype === "html");
   const isAttachmentByDisposition = disposition === "attachment";
   const isInlineFile = disposition === "inline" && !!filename;
@@ -137,6 +173,7 @@ function collectAttachments(structure: unknown, output: ImapAttachmentMeta[] = [
   return output;
 }
 
+/** Parse a raw RFC 5322 message buffer into plain text and HTML strings. */
 async function parseMailSource(source?: Buffer) {
   if (!source) {
     console.warn("[parseMailSource] No source buffer received from IMAP");
@@ -156,11 +193,13 @@ async function parseMailSource(source?: Buffer) {
   }
 }
 
+/** Generate a max-240-char plain-text preview from the message text or stripped HTML. */
 function buildTextPreview(text: string, html: string) {
   const fallback = text || html.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
   return fallback.replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
+/** Crude HTML-to-plain-text conversion (strips tags, collapses whitespace). */
 function htmlToPlainText(html: string) {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -174,6 +213,7 @@ function htmlToPlainText(html: string) {
     .trim();
 }
 
+/** Consume a Node.js Readable stream into a single Buffer. */
 async function streamToBuffer(stream: Readable) {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
@@ -182,6 +222,7 @@ async function streamToBuffer(stream: Readable) {
   return Buffer.concat(chunks);
 }
 
+/** Consume an arbitrary async iterable (Buffer, Uint8Array, string chunks) into a Buffer. */
 async function asyncIterableToBuffer(input: AsyncIterable<unknown>) {
   const chunks: Buffer[] = [];
   for await (const chunk of input) {
@@ -208,6 +249,7 @@ async function asyncIterableToBuffer(input: AsyncIterable<unknown>) {
   return Buffer.concat(chunks);
 }
 
+/** Consume a Web ReadableStream<Uint8Array> into a Buffer. */
 async function webReadableStreamToBuffer(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader();
   const chunks: Buffer[] = [];
@@ -223,6 +265,11 @@ async function webReadableStreamToBuffer(stream: ReadableStream<Uint8Array>) {
   return Buffer.concat(chunks);
 }
 
+/**
+ * Universal binary reader: accepts Buffer, Uint8Array, string, Node Readable,
+ * Web ReadableStream, or async iterable and returns a Buffer.
+ * Returns null if the value cannot be converted.
+ */
 async function readBinaryPayload(value: unknown): Promise<Buffer | null> {
   if (!value) return null;
   if (Buffer.isBuffer(value)) return value;
@@ -247,16 +294,33 @@ async function readBinaryPayload(value: unknown): Promise<Buffer | null> {
 // Shared IMAP Session — reuses a single TLS connection for multiple operations
 // ---------------------------------------------------------------------------
 
+/**
+ * A reusable IMAP session that keeps a single TLS connection open
+ * across multiple mailbox operations (open, fetch, flag checks).
+ */
 export interface ImapSession {
+  /** Open (SELECT) a mailbox and return its UID state. */
   openMailbox(folderPath: string): Promise<{ uidValidity: bigint; uidNext: bigint; exists: number }>;
+  /** Fetch full message metadata for a UID range (e.g. "42:*"). */
   fetchNewMessages(uidRange: string): Promise<ImapMessageMeta[]>;
+  /** Fetch only UID + flags for a UID range (lightweight delta sync). */
   fetchFlags(uidRange: string): Promise<Array<{ uid: bigint; flags: string[] }>>;
+  /** Iterate through all messages in the current mailbox in sequence-number batches. */
   fetchMessagesPaged(
     batchSize: number,
     onBatch: (batch: ImapMessageMeta[]) => Promise<void>,
   ): Promise<{ totalFetched: number; maxUid: bigint }>;
 }
 
+/**
+ * Execute multiple IMAP operations within a single shared connection.
+ * Connects, invokes the callback with a session object, and ensures
+ * the connection is closed (logout) even on error.
+ *
+ * @param config - IMAP account credentials
+ * @param fn - Async callback receiving the open session
+ * @returns The value returned by the callback
+ */
 export async function withImapSession<T>(
   config: ImapAccountConfig,
   fn: (session: ImapSession) => Promise<T>,
@@ -264,6 +328,8 @@ export async function withImapSession<T>(
   const client = buildClient(config);
   await client.connect();
   try {
+    // Track the message count of the currently opened mailbox to skip
+    // fetch calls on empty folders.
     let currentMailboxExists = 0;
 
     const session: ImapSession = {
@@ -429,10 +495,17 @@ export async function withImapSession<T>(
 
     return await fn(session);
   } finally {
+    // Gracefully close the TLS connection if still alive
     if (client.usable) await client.logout();
   }
 }
 
+/**
+ * Verify that the IMAP credentials are valid by connecting and opening INBOX.
+ *
+ * @param config - IMAP account credentials
+ * @returns `{ ok: true }` on success; throws on authentication/connection failure
+ */
 export async function testImapConnection(config: ImapAccountConfig) {
   const client = buildClient(config);
   try {
@@ -446,6 +519,13 @@ export async function testImapConnection(config: ImapAccountConfig) {
   }
 }
 
+/**
+ * List all folders (mailboxes) on the IMAP server with their flags and
+ * detected special-use role.
+ *
+ * @param config - IMAP account credentials
+ * @returns Array of folder info objects
+ */
 export async function listImapFolders(config: ImapAccountConfig): Promise<ImapFolderInfo[]> {
   const client = buildClient(config);
   try {
@@ -468,6 +548,12 @@ export async function listImapFolders(config: ImapAccountConfig): Promise<ImapFo
   }
 }
 
+/**
+ * Create a new folder (mailbox) on the IMAP server.
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Full path of the folder to create (e.g. "INBOX/Projects")
+ */
 export async function createImapFolder(
   config: ImapAccountConfig,
   folderPath: string,
@@ -483,6 +569,12 @@ export async function createImapFolder(
   }
 }
 
+/**
+ * Permanently delete a folder (mailbox) from the IMAP server.
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Full path of the folder to delete
+ */
 export async function deleteImapFolder(
   config: ImapAccountConfig,
   folderPath: string,
@@ -498,6 +590,13 @@ export async function deleteImapFolder(
   }
 }
 
+/**
+ * Rename (move) a folder on the IMAP server.
+ *
+ * @param config - IMAP account credentials
+ * @param fromPath - Current folder path
+ * @param toPath - Desired new folder path
+ */
 export async function renameImapFolder(
   config: ImapAccountConfig,
   fromPath: string,
@@ -514,6 +613,13 @@ export async function renameImapFolder(
   }
 }
 
+/**
+ * Copy all messages from one folder to another (server-side COPY).
+ *
+ * @param config - IMAP account credentials
+ * @param sourcePath - Folder to copy messages from
+ * @param targetPath - Folder to copy messages into
+ */
 export async function copyImapFolderMessages(
   config: ImapAccountConfig,
   sourcePath: string,
@@ -534,12 +640,14 @@ export async function copyImapFolderMessages(
   }
 }
 
+/** Current state of a mailbox: UID validity epoch, next expected UID, and message count. */
 export type ImapMailboxStatus = {
   uidValidity: bigint;
   uidNext: bigint;
   exists: number;
 };
 
+/** Safely coerce an unknown value (bigint, number, or numeric string) to bigint. */
 function toBigInt(value: unknown): bigint {
   if (typeof value === "bigint") return value;
   if (typeof value === "number") return BigInt(value);
@@ -547,6 +655,14 @@ function toBigInt(value: unknown): bigint {
   return BigInt(0);
 }
 
+/**
+ * Open a mailbox and return its current UID validity, next UID, and message count.
+ * Used to detect whether a full re-sync is needed (uidValidity changed).
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder to query
+ * @returns Mailbox status with UID state
+ */
 export async function getMailboxStatus(
   config: ImapAccountConfig,
   folderPath: string,
@@ -571,6 +687,15 @@ export async function getMailboxStatus(
   }
 }
 
+/**
+ * Fetch only the UID and flags for messages in a given UID range.
+ * Lightweight operation used for incremental flag-sync without downloading bodies.
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder to query
+ * @param range - IMAP UID range string (e.g. "1:*" or "500:600")
+ * @returns Array of uid/flags pairs
+ */
 export async function fetchFlagsByUidRange(
   config: ImapAccountConfig,
   folderPath: string,
@@ -602,6 +727,10 @@ export async function fetchFlagsByUidRange(
   }
 }
 
+/**
+ * Internal helper: fetch full message metadata for a given range (either
+ * sequence-number or UID-based depending on `useUid`).
+ */
 async function fetchMessagesInRange(
   config: ImapAccountConfig,
   folderPath: string,
@@ -684,6 +813,15 @@ async function fetchMessagesInRange(
   }
 }
 
+/**
+ * Fetch the most recent N messages from a folder (by sequence number).
+ * Opens its own connection to determine the total count, then fetches the tail.
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder to query
+ * @param maxMessages - Maximum number of messages to return (default 100)
+ * @returns Array of message metadata, newest last
+ */
 export async function fetchFolderMessages(
   config: ImapAccountConfig,
   folderPath: string,
@@ -701,10 +839,19 @@ export async function fetchFolderMessages(
     }
   }
   if (!mailboxExists) return [];
+  // Calculate the sequence-number range for the latest N messages
   const start = Math.max(1, mailboxExists - maxMessages + 1);
   return fetchMessagesInRange(config, folderPath, `${start}:*`, false);
 }
 
+/**
+ * Fetch full message metadata for a specific UID range.
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder to query
+ * @param uidRange - IMAP UID range string (e.g. "100:*")
+ * @returns Array of message metadata
+ */
 export async function fetchMessagesByUidRange(
   config: ImapAccountConfig,
   folderPath: string,
@@ -840,6 +987,14 @@ export async function fetchFolderMessagesPaged(
   }
 }
 
+/**
+ * Add or remove the \Seen flag on a single message.
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder containing the message
+ * @param uid - Message UID
+ * @param seen - true to mark as read, false to mark as unread
+ */
 export async function setMessageSeen(
   config: ImapAccountConfig,
   folderPath: string,
@@ -863,6 +1018,16 @@ export async function setMessageSeen(
   }
 }
 
+/**
+ * Move a single message to a target folder with folder-existence validation.
+ * Returns the new UID assigned in the target folder (if the server reports it).
+ *
+ * @param config - IMAP account credentials
+ * @param fromFolder - Source folder path
+ * @param uid - Message UID in the source folder
+ * @param targetFolder - Destination folder path
+ * @returns New UID in the target folder, or null if the server didn't report it
+ */
 export async function moveMessage(
   config: ImapAccountConfig,
   fromFolder: string,
@@ -873,12 +1038,14 @@ export async function moveMessage(
   try {
     await client.connect();
     const folders = await client.list();
+    // Validate that the target folder actually exists before attempting the move
     const exists = folders.some((f) => f.path.toLowerCase() === targetFolder.toLowerCase());
     if (!exists) {
       throw new Error(`Target folder '${targetFolder}' does not exist on IMAP server`);
     }
     await client.mailboxOpen(fromFolder);
     const result = await client.messageMove(uid.toString(), targetFolder, { uid: true });
+    // uidMap maps old UID → new UID in the destination folder (RFC 4315 UIDPLUS)
     if (result && result.uidMap) {
       const newUid = result.uidMap.get(Number(uid));
       if (newUid) return BigInt(newUid);
@@ -919,6 +1086,16 @@ export async function moveMessageDirect(
   }
 }
 
+/**
+ * Move a message to a special-use folder (trash or spam) by auto-detecting
+ * the target folder path from the server's folder list.
+ *
+ * @param config - IMAP account credentials
+ * @param fromFolder - Source folder path
+ * @param uid - Message UID
+ * @param type - Target special-use role ("trash" or "spam")
+ * @returns The resolved target path and the new UID (if reported)
+ */
 export async function moveMessageToSpecialFolder(
   config: ImapAccountConfig,
   fromFolder: string,
@@ -948,6 +1125,7 @@ export async function resolveSpecialFolderPath(
   return target.path;
 }
 
+/** Result of a bulk move operation: successfully moved UIDs and per-message failures. */
 export type BulkMoveResult = {
   moved: bigint[];
   failed: Array<{ uid: bigint; fromFolder: string; error: string }>;
@@ -969,6 +1147,7 @@ export async function bulkMoveMessages(
   try {
     await client.connect();
 
+    // Group messages by source folder to minimize mailbox-open calls
     const byFolder = new Map<string, bigint[]>();
     for (const msg of messages) {
       const list = byFolder.get(msg.fromFolder) ?? [];
@@ -995,12 +1174,24 @@ export async function bulkMoveMessages(
   return result;
 }
 
+/** Parsed message body content: plain text, raw HTML, and HTML-converted-to-text fallback. */
 export type ImapMessageBody = {
   text: string;
   html: string;
+  /** Plain-text derived from HTML (used when no text/plain part exists). */
   textFromHtml: string;
 };
 
+/**
+ * Fetch and parse the full body (text + HTML) of a single message by UID.
+ * Uses a two-pass strategy: first tries fetching the raw source via FETCH,
+ * then falls back to ImapFlow's download() if the source wasn't available.
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder containing the message
+ * @param uid - Message UID
+ * @returns Parsed body with text, html, and textFromHtml fields
+ */
 export async function fetchMessageBody(
   config: ImapAccountConfig,
   folderPath: string,
@@ -1058,6 +1249,15 @@ export async function fetchMessageBody(
   }
 }
 
+/**
+ * Look up a message's UID by its Message-ID header value.
+ * Tries both bare and angle-bracketed forms to handle server variations.
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder to search in
+ * @param messageId - RFC 2822 Message-ID (with or without angle brackets)
+ * @returns The UID if found, null otherwise
+ */
 export async function resolveUidByMessageId(
   config: ImapAccountConfig,
   folderPath: string,
@@ -1068,6 +1268,7 @@ export async function resolveUidByMessageId(
     await client.connect();
     await client.mailboxOpen(folderPath);
 
+    // Strip angle brackets for a normalized search, then retry with brackets if needed
     const cleanId = messageId.replace(/^<|>$/g, "");
     const results = await client.search(
       { header: { "message-id": cleanId } } as never,
@@ -1099,6 +1300,17 @@ export async function resolveUidByMessageId(
   }
 }
 
+/**
+ * Search for a message UID by subject and approximate date.
+ * First tries an exact date match, then widens to a ±1 day window as fallback.
+ * Returns the latest matching UID (highest sequence number).
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder to search in
+ * @param subject - Subject text to match (truncated to 80 chars for SEARCH)
+ * @param date - Approximate send date
+ * @returns The UID if found, null otherwise
+ */
 export async function searchUidBySubjectDate(
   config: ImapAccountConfig,
   folderPath: string,
@@ -1122,6 +1334,7 @@ export async function searchUidBySubjectDate(
       return BigInt(results[results.length - 1]);
     }
 
+    // Widen the search window: 1 day before to 2 days after to account for timezone drift
     const before = new Date(onDate);
     before.setDate(before.getDate() + 2);
     const after = new Date(onDate);
@@ -1147,6 +1360,17 @@ export async function searchUidBySubjectDate(
   }
 }
 
+/**
+ * Download a single attachment part (by IMAP part ID) as a raw Buffer.
+ * Handles various runtime return shapes from ImapFlow (stream, buffer, async iterable).
+ *
+ * @param config - IMAP account credentials
+ * @param folderPath - Folder containing the message
+ * @param uid - Message UID
+ * @param partId - IMAP BODYSTRUCTURE part identifier (e.g. "1.2")
+ * @returns Raw attachment data as a Buffer
+ * @throws If the attachment stream cannot be read
+ */
 export async function downloadAttachmentPart(
   config: ImapAccountConfig,
   folderPath: string,
@@ -1159,7 +1383,8 @@ export async function downloadAttachmentPart(
     await client.mailboxOpen(folderPath);
     const downloaded = (await client.download(uid.toString(), partId, { uid: true })) as unknown;
 
-    // Handle different runtime shapes from imapflow typings/runtime.
+    // ImapFlow may return the data directly or wrapped in an object with
+    // content/source/stream/body/payload fields depending on version and part type.
     const direct = await readBinaryPayload(downloaded);
     if (direct) {
       return direct;

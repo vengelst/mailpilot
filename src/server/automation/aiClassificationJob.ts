@@ -1,3 +1,12 @@
+/**
+ * @module aiClassificationJob
+ *
+ * Orchestrates AI-powered email classification. Fetches the full message body
+ * from IMAP when not already cached, runs the AI analysis pipeline, persists
+ * the classification results (category, priority, action, keywords, contacts)
+ * back to the email index, and emits audit log entries for observability.
+ */
+
 import { prisma } from "@/server/db/prisma";
 import { analyzeEmailForUser } from "@/server/ai";
 import { loadMessageBody } from "@/server/imap/imapService";
@@ -42,6 +51,7 @@ export async function runAiClassificationForEmail(emailId: string, userId: strin
     actor: "ai",
   });
 
+  // Prefer cached plain-text body; fetch via IMAP only when not yet persisted
   let bodyForAi = email.bodyPlain || email.bodyText || "";
   let bodyWasFetched = false;
   if (!email.bodyFetchedAt) {
@@ -86,6 +96,7 @@ export async function runAiClassificationForEmail(emailId: string, userId: strin
     throw error;
   }
 
+  // Persist all AI-derived fields to the email index
   await prisma.emailIndex.update({
     where: { id: email.id },
     data: {
@@ -102,6 +113,7 @@ export async function runAiClassificationForEmail(emailId: string, userId: strin
     },
   });
 
+  // Store detected contacts as pending candidates (replace stale entries first)
   if (ai.detectedContacts.length > 0) {
     await prisma.contactCandidate.deleteMany({
       where: {
@@ -141,6 +153,15 @@ export async function runAiClassificationForEmail(emailId: string, userId: strin
   return ai;
 }
 
+/**
+ * Batch job: classifies up to 100 unanalyzed emails for a user.
+ * Processes sequentially to respect AI rate limits.
+ *
+ * @param input.userId - Owner of the mailbox
+ * @param input.accountId - Optional account filter (when user has multiple mailboxes)
+ * @param input.emailIds - Optional explicit list of email IDs to classify
+ * @returns Count and IDs of successfully analyzed emails
+ */
 export async function runAiClassificationJob(input: {
   userId: string;
   accountId?: string;
