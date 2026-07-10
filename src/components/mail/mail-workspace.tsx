@@ -3184,8 +3184,15 @@ export function MailWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccountId]);
 
+  const composeInitializedRef = useRef(false);
+
   useEffect(() => {
-    if (!composeOpen || !composeEditorRef.current) return;
+    if (!composeOpen) {
+      composeInitializedRef.current = false;
+      return;
+    }
+    if (composeInitializedRef.current || !composeEditorRef.current) return;
+    composeInitializedRef.current = true;
     composeEditorRef.current.innerHTML = composeForm.bodyHtml || "";
     requestAnimationFrame(() => {
       const editor = composeEditorRef.current;
@@ -3201,7 +3208,8 @@ export function MailWorkspace() {
       }
       editor.focus();
     });
-  }, [composeOpen, composeForm.bodyHtml]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composeOpen]);
 
   useEffect(() => {
     if (!mailContextMenu) return;
