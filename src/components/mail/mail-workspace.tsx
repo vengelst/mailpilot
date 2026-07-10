@@ -5791,6 +5791,7 @@ export function MailWorkspace() {
                   onChange={(e) => setComposeForm((prev) => ({ ...prev, to: e.target.value }))}
                   placeholder="max@firma.de; team@firma.de"
                   className="glass-input rounded-lg px-2 py-1.5"
+                  dir="ltr"
                 />
               </div>
               <div className="grid grid-cols-[110px_1fr] items-center gap-2">
@@ -5799,6 +5800,7 @@ export function MailWorkspace() {
                   value={composeForm.cc}
                   onChange={(e) => setComposeForm((prev) => ({ ...prev, cc: e.target.value }))}
                   className="glass-input rounded-lg px-2 py-1.5"
+                  dir="ltr"
                 />
               </div>
               <div className="grid grid-cols-[110px_1fr] items-center gap-2">
@@ -5807,6 +5809,7 @@ export function MailWorkspace() {
                   value={composeForm.bcc}
                   onChange={(e) => setComposeForm((prev) => ({ ...prev, bcc: e.target.value }))}
                   className="glass-input rounded-lg px-2 py-1.5"
+                  dir="ltr"
                 />
               </div>
               <div className="grid grid-cols-[110px_1fr] items-center gap-2">
@@ -5815,6 +5818,7 @@ export function MailWorkspace() {
                   value={composeForm.subject}
                   onChange={(e) => setComposeForm((prev) => ({ ...prev, subject: e.target.value }))}
                   className="glass-input rounded-lg px-2 py-1.5"
+                  dir="ltr"
                 />
               </div>
             </div>
@@ -5852,6 +5856,7 @@ export function MailWorkspace() {
                 ref={composeEditorRef}
                 contentEditable
                 suppressContentEditableWarning
+                dir="ltr"
                 onInput={() =>
                   setComposeForm((prev) => ({
                     ...prev,
@@ -5859,6 +5864,7 @@ export function MailWorkspace() {
                   }))
                 }
                 className="glass-input min-h-[260px] rounded-xl p-3 text-sm"
+                style={{ direction: "ltr", textAlign: "left", unicodeBidi: "plaintext" }}
               />
             </div>
 
