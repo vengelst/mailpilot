@@ -143,10 +143,10 @@ export default function LabelsPage() {
         </div>
         <div className="flex gap-2">
           <Link
-            href="/"
+            href="/settings"
             className="glass-btn rounded-lg px-3 py-2 text-sm"
           >
-            Zurück
+            ← Einstellungen
           </Link>
           <button
             onClick={openCreate}

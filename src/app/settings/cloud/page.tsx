@@ -53,6 +53,11 @@ export default function CloudSettingsPage() {
 
   return (
     <main className="min-h-screen p-6">
+      <div className="mb-4 flex items-center gap-2">
+        <a href="/settings" className="text-sm glass-text-secondary hover:underline">
+          ← Einstellungen
+        </a>
+      </div>
       <h1 className="text-xl font-semibold glass-text-primary">Cloud-Konten</h1>
       <p className="mt-2 text-sm glass-text-secondary">
         OAuth-Tokens werden ausschließlich serverseitig verschlüsselt gespeichert.

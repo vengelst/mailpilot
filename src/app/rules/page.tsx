@@ -692,6 +692,11 @@ export default function RulesPage() {
 
   return (
     <main className="min-h-screen p-4 md:p-6 max-w-5xl mx-auto">
+      <div className="mb-4 flex items-center gap-2">
+        <a href="/settings" className="text-sm glass-text-secondary hover:underline">
+          ← Einstellungen
+        </a>
+      </div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl font-semibold glass-text-primary">Regeln</h1>

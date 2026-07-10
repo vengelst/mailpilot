@@ -146,6 +146,11 @@ export default function BlocklistPage() {
   return (
     <main className="min-h-screen p-6">
       <div className="mx-auto max-w-3xl">
+        <div className="mb-4 flex items-center gap-2">
+          <a href="/mail" className="text-sm glass-text-secondary hover:underline">
+            ← Zurück zur Mail
+          </a>
+        </div>
         <h1 className="text-2xl font-semibold glass-text-primary">Absender-Regeln</h1>
         <p className="mt-1 text-sm glass-text-secondary">
           Verwalte erlaubte und blockierte Absender. Erlaubte Absender werden nicht als Spam eingestuft.

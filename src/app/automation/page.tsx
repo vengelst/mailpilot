@@ -117,6 +117,11 @@ export default function AutomationPage() {
 
   return (
     <main className="min-h-screen p-6">
+      <div className="mb-4 flex items-center gap-2">
+        <a href="/settings" className="text-sm glass-text-secondary hover:underline">
+          ← Einstellungen
+        </a>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold glass-text-primary">Automatisierung</h1>
         <button

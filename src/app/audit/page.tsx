@@ -14,6 +14,11 @@ export default async function AuditPage() {
 
   return (
     <main className="min-h-screen p-6">
+      <div className="mb-4 flex items-center gap-2">
+        <a href="/settings" className="text-sm glass-text-secondary hover:underline">
+          ← Einstellungen
+        </a>
+      </div>
       <h1 className="text-xl font-semibold glass-text-primary">Audit-Log</h1>
       <ul className="mt-4 space-y-2">
         {logs.map((log) => (
