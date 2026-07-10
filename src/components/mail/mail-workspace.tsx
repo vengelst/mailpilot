@@ -2589,7 +2589,7 @@ export function MailWorkspace() {
           : mode === "forward"
             ? `Fwd: ${source?.subject ?? ""}`
             : "",
-      bodyHtml: `${signatureHtml}${quoteHtml}`.trim(),
+      bodyHtml: `<div dir="ltr" style="direction:ltr;text-align:left"><br></div>${signatureHtml}${quoteHtml}`.trim(),
       sendAtLocal: "",
     });
     setComposeOpen(true);
@@ -3187,6 +3187,20 @@ export function MailWorkspace() {
   useEffect(() => {
     if (!composeOpen || !composeEditorRef.current) return;
     composeEditorRef.current.innerHTML = composeForm.bodyHtml || "";
+    requestAnimationFrame(() => {
+      const editor = composeEditorRef.current;
+      if (!editor) return;
+      const firstDiv = editor.querySelector("div[dir='ltr']") || editor.firstChild;
+      if (firstDiv) {
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.setStart(firstDiv, 0);
+        range.collapse(true);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+      editor.focus();
+    });
   }, [composeOpen, composeForm.bodyHtml]);
 
   useEffect(() => {
@@ -5864,7 +5878,7 @@ export function MailWorkspace() {
                   }))
                 }
                 className="glass-input min-h-[260px] rounded-xl p-3 text-sm"
-                style={{ direction: "ltr", textAlign: "left", unicodeBidi: "plaintext" }}
+                style={{ direction: "ltr", textAlign: "left" }}
               />
             </div>
 
