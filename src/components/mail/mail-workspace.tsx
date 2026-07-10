@@ -454,11 +454,15 @@ type MailContextMenuState = {
   targetIds: string[];
 };
 
-type SignatureSettings = {
-  signatureText: string;
+type SignatureData = {
+  id: string;
+  name: string;
+  htmlContent: string;
+  accountIds: string[];
   includeOnNewMail: boolean;
   includeOnReply: boolean;
   includeOnForward: boolean;
+  isDefault: boolean;
 };
 
 type ComposeMode = "new" | "reply" | "forward";
@@ -739,12 +743,7 @@ export function MailWorkspace() {
   const [mailContextMenu, setMailContextMenu] = useState<MailContextMenuState | null>(null);
   const [contextMoveTargetFolder, setContextMoveTargetFolder] = useState("");
   const [contextAttachmentId, setContextAttachmentId] = useState("");
-  const [signatureSettings, setSignatureSettings] = useState<SignatureSettings>({
-    signatureText: "",
-    includeOnNewMail: true,
-    includeOnReply: true,
-    includeOnForward: true,
-  });
+  const [signatures, setSignatures] = useState<SignatureData[]>([]);
   const [popupEmailId, setPopupEmailId] = useState<string | null>(null);
   const [pendingLinkUrl, setPendingLinkUrl] = useState<string | null>(null);
   const [isManagingFolder, setIsManagingFolder] = useState(false);
@@ -1621,10 +1620,10 @@ export function MailWorkspace() {
   }
 
   async function loadSignatureSettings() {
-    const res = await fetch("/api/signature/settings");
+    const res = await fetch("/api/signatures");
     if (!res.ok) return;
-    const data = (await res.json()) as { settings?: SignatureSettings };
-    if (data.settings) setSignatureSettings(data.settings);
+    const data = (await res.json()) as { signatures?: SignatureData[] };
+    if (data.signatures) setSignatures(data.signatures);
   }
 
   async function loadAutomationSettings() {
@@ -2550,19 +2549,22 @@ export function MailWorkspace() {
     }
   }
 
-  function getSignatureFor(mode: "new" | "reply" | "forward") {
-    const signature = toMailtoPlainText(signatureSettings.signatureText);
-    if (!signature) return "";
-    if (mode === "new" && signatureSettings.includeOnNewMail) return signature;
-    if (mode === "reply" && signatureSettings.includeOnReply) return signature;
-    if (mode === "forward" && signatureSettings.includeOnForward) return signature;
-    return "";
+  function getSignatureFor(mode: "new" | "reply" | "forward", accountId?: string) {
+    const matchByAccount = accountId
+      ? signatures.find((s) => s.accountIds.includes(accountId))
+      : undefined;
+    const sig = matchByAccount ?? signatures.find((s) => s.isDefault) ?? null;
+    if (!sig) return "";
+    if (mode === "new" && !sig.includeOnNewMail) return "";
+    if (mode === "reply" && !sig.includeOnReply) return "";
+    if (mode === "forward" && !sig.includeOnForward) return "";
+    return sig.htmlContent;
   }
 
-  function insertSignatureHtml(mode: ComposeMode) {
-    const signature = getSignatureFor(mode);
-    if (!signature) return "";
-    return `<p><br/></p><p>${plainToHtml(signature)}</p>`;
+  function insertSignatureHtml(mode: ComposeMode, accountId?: string) {
+    const html = getSignatureFor(mode, accountId);
+    if (!html) return "";
+    return `<p><br/></p><div>${html}</div>`;
   }
 
   function openCompose(mode: ComposeMode, source?: Email) {
@@ -2575,7 +2577,7 @@ export function MailWorkspace() {
           )
         : "";
     const quoteHtml = quoteText ? `<p>${plainToHtml(quoteText)}</p>` : "";
-    const signatureHtml = insertSignatureHtml(mode);
+    const signatureHtml = insertSignatureHtml(mode, source?.accountId || defaultAccountId);
     setComposeMode(mode);
     setComposeForm({
       draftId: null,
@@ -5864,7 +5866,7 @@ export function MailWorkspace() {
               <button
                 className="glass-btn ml-auto rounded-lg px-2 py-1"
                 onClick={() => {
-                  const signature = insertSignatureHtml(composeMode);
+                  const signature = insertSignatureHtml(composeMode, composeForm.accountId);
                   if (!signature) return;
                   applyComposeCommand("insertHTML", signature);
                 }}
