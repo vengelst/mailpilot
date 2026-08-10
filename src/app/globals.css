@@ -76,69 +76,69 @@ html.light {
 }
 
 html.dark {
-  --background: #0b1220;
-  --foreground: #e5e7eb;
+  --background: #05070d;
+  --foreground: #f8fafc;
 
-  --glass-bg: rgba(13, 20, 35, 0.46);
-  --glass-bg-solid: rgba(12, 19, 33, 0.62);
-  --glass-bg-heavy: rgba(11, 18, 32, 0.76);
-  --glass-bg-hover: rgba(20, 30, 50, 0.56);
-  --glass-bg-active: rgba(20, 30, 50, 0.68);
-  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-bg: rgba(6, 10, 18, 0.78);
+  --glass-bg-solid: rgba(5, 9, 16, 0.88);
+  --glass-bg-heavy: rgba(4, 8, 14, 0.94);
+  --glass-bg-hover: rgba(14, 22, 38, 0.72);
+  --glass-bg-active: rgba(18, 28, 48, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.14);
   --glass-border-subtle: rgba(255, 255, 255, 0.08);
   --glass-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.34),
-    0 2px 12px rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+    0 12px 36px rgba(0, 0, 0, 0.5),
+    0 2px 12px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03);
   --glass-shadow-lg:
-    0 24px 68px rgba(0, 0, 0, 0.46),
-    0 8px 26px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+    0 24px 68px rgba(0, 0, 0, 0.58),
+    0 8px 26px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
 
-  --glass-btn-bg: rgba(255, 255, 255, 0.09);
-  --glass-btn-hover: rgba(255, 255, 255, 0.16);
+  --glass-btn-bg: rgba(255, 255, 255, 0.07);
+  --glass-btn-hover: rgba(255, 255, 255, 0.14);
   --glass-btn-border: rgba(255, 255, 255, 0.16);
   --glass-btn-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 4px 14px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
-  --glass-input-bg: rgba(255, 255, 255, 0.06);
-  --glass-input-border: rgba(255, 255, 255, 0.1);
-  --glass-input-focus-border: rgba(100, 120, 200, 0.4);
+  --glass-input-bg: rgba(255, 255, 255, 0.05);
+  --glass-input-border: rgba(255, 255, 255, 0.12);
+  --glass-input-focus-border: rgba(100, 120, 200, 0.45);
 
-  --glass-accent: rgba(96, 165, 250, 0.15);
-  --glass-accent-solid: rgba(96, 165, 250, 0.85);
-  --glass-accent-text: #93c5fd;
-  --glass-danger: rgba(248, 113, 113, 0.15);
-  --glass-success: rgba(74, 222, 128, 0.15);
-  --glass-edge-highlight: rgba(255, 255, 255, 0.22);
-  --glass-edge-shadow: rgba(0, 0, 0, 0.42);
-  --glass-sheen: rgba(255, 255, 255, 0.12);
-  --glass-frost-tint: rgba(96, 165, 250, 0.1);
+  --glass-accent: rgba(96, 165, 250, 0.18);
+  --glass-accent-solid: rgba(96, 165, 250, 0.9);
+  --glass-accent-text: #bfdbfe;
+  --glass-danger: rgba(248, 113, 113, 0.18);
+  --glass-success: rgba(74, 222, 128, 0.18);
+  --glass-edge-highlight: rgba(255, 255, 255, 0.12);
+  --glass-edge-shadow: rgba(0, 0, 0, 0.55);
+  --glass-sheen: rgba(255, 255, 255, 0.05);
+  --glass-frost-tint: rgba(96, 165, 250, 0.06);
 
   --app-gradient: linear-gradient(135deg,
-    #0b1220 0%,
-    #0f1a30 20%,
-    #141428 40%,
-    #1a1028 60%,
-    #18101e 80%,
-    #0d1825 100%);
-  --app-gradient-mesh: radial-gradient(ellipse at 20% 50%, rgba(60, 80, 180, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(120, 60, 180, 0.10) 0%, transparent 50%),
-    radial-gradient(ellipse at 60% 80%, rgba(180, 80, 60, 0.06) 0%, transparent 50%);
+    #03050a 0%,
+    #060a12 20%,
+    #080812 40%,
+    #0c0612 60%,
+    #0a0610 80%,
+    #050910 100%);
+  --app-gradient-mesh: radial-gradient(ellipse at 20% 50%, rgba(40, 60, 140, 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(90, 40, 140, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 60% 80%, rgba(140, 50, 40, 0.05) 0%, transparent 50%);
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #cbd5e1;
-  --text-tertiary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #ffffff;
+  --text-secondary: #e2e8f0;
+  --text-tertiary: #cbd5e1;
+  --text-muted: #94a3b8;
 }
 
 @media (prefers-color-scheme: dark) {
   html:not(.light):not(.dark) {
-    --background: #0b1220;
-    --foreground: #e5e7eb;
+    --background: #05070d;
+    --foreground: #f8fafc;
   }
 }
 
@@ -385,8 +385,56 @@ html.dark .glass-btn-dark:hover {
     inset 0 -1px 0 0 var(--glass-edge-shadow);
 }
 
+/* Dark mode: reduce bright white overlays so panels stay dark and text contrasts */
+html.dark .glass,
+html.dark .glass-solid,
+html.dark .glass-heavy,
+html.dark .glass-subtle,
+html.dark .glass-card {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 45%, transparent 100%),
+    linear-gradient(120deg, var(--glass-frost-tint) 0%, transparent 58%),
+    var(--glass-bg);
+}
+
+html.dark .glass-solid {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.025) 45%, transparent 100%),
+    linear-gradient(120deg, var(--glass-frost-tint) 0%, transparent 58%),
+    var(--glass-bg-solid);
+}
+
+html.dark .glass-heavy,
+html.dark .glass-modal {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.03) 42%, transparent 100%),
+    linear-gradient(120deg, var(--glass-frost-tint) 0%, transparent 58%),
+    var(--glass-bg-heavy);
+}
+
+html.dark .glass-btn {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%),
+    var(--glass-btn-bg);
+}
+
+html.dark .glass-input {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%),
+    var(--glass-input-bg);
+}
+
+html.dark .glass::before,
+html.dark .glass-solid::before,
+html.dark .glass-heavy::before,
+html.dark .glass-subtle::before,
+html.dark .glass-card::before,
+html.dark .glass-modal::before {
+  opacity: 0.35;
+}
+
 html.dark .glass-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 /* ── Glass Modal Overlay ── */
@@ -486,7 +534,7 @@ html.dark .glass-heavy ::-webkit-scrollbar-thumb {
 html.dark .bg-white,
 html.dark .bg-gray-50,
 html.dark .bg-gray-100 {
-  background-color: #111827 !important;
+  background-color: #0a0f18 !important;
 }
 
 html.dark .text-black,
@@ -500,7 +548,7 @@ html.dark .text-slate-800,
 html.dark .text-slate-700,
 html.dark .text-slate-600,
 html.dark .text-slate-500 {
-  color: #e5e7eb !important;
+  color: #f1f5f9 !important;
 }
 
 html.dark .border-gray-200,
