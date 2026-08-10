@@ -679,12 +679,18 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
       });
       const suggestion = suggestRes.ok ? await suggestRes.json() : null;
 
+      const newFolderName = s.senderPromptNewFolder.trim().replace(/^\/+|\/+$/g, "");
       const targetFolder = (
         s.senderPromptUseNewFolder
-          ? s.senderPromptNewFolder
+          ? [s.senderPromptFolder || "INBOX", newFolderName].filter(Boolean).join("/")
           : s.senderPromptFolder
       ).trim() || "INBOX";
       const autoLabels = [...new Set(s.senderPromptAutoLabels.map((l) => l.trim()).filter(Boolean))];
+
+      if (s.senderPromptUseNewFolder && !newFolderName) {
+        s.setUiError("Bitte einen Namen für den neuen Ordner eingeben.");
+        return;
+      }
 
       // Create new IMAP folder if the user typed a path that does not exist yet
       if (

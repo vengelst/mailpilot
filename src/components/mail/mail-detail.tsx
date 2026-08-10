@@ -181,8 +181,8 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
             <div>
               <label className="block text-xs glass-text-muted mb-0.5">Zielordner</label>
               {!s.senderPromptUseNewFolder ? (
-                <div className="flex gap-1">
-                  <select value={s.senderPromptFolder} onChange={(e) => s.setSenderPromptFolder(e.target.value)} className="glass-select rounded-lg px-2 py-1 text-sm">
+                <div className="flex flex-wrap gap-1 items-center">
+                  <select value={s.senderPromptFolder} onChange={(e) => s.setSenderPromptFolder(e.target.value)} className="glass-select rounded-lg px-2 py-1 text-sm min-w-[12rem]">
                     <option value="">— Ordner wählen —</option>
                     {s.folders.map((f) => <option key={f.path} value={f.path}>{f.path}</option>)}
                   </select>
@@ -191,9 +191,13 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
                     className="glass-btn rounded-lg px-2 py-1 text-xs whitespace-nowrap"
                     onClick={() => {
                       s.setSenderPromptUseNewFolder(true);
+                      const parent =
+                        s.senderPromptFolder ||
+                        (s.folders.some((f) => f.path === "INBOX/Kunden") ? "INBOX/Kunden" : "INBOX");
+                      s.setSenderPromptFolder(parent);
                       const suggestion = s.senderPromptData?.domain
-                        ? `INBOX/Kunden/${s.senderPromptData.domain.split(".")[0] ?? s.senderPromptData.domain}`
-                        : "INBOX/";
+                        ? (s.senderPromptData.domain.split(".")[0] ?? s.senderPromptData.domain)
+                        : "";
                       s.setSenderPromptNewFolder(suggestion);
                     }}
                   >
@@ -201,24 +205,56 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
                   </button>
                 </div>
               ) : (
-                <div className="flex gap-1">
-                  <input
-                    type="text"
-                    value={s.senderPromptNewFolder}
-                    onChange={(e) => s.setSenderPromptNewFolder(e.target.value)}
-                    placeholder="z.B. INBOX/Kunden/Firma"
-                    className="glass-input rounded-lg px-2 py-1 text-sm min-w-[14rem]"
-                  />
-                  <button
-                    type="button"
-                    className="glass-btn rounded-lg px-2 py-1 text-xs whitespace-nowrap"
-                    onClick={() => {
-                      s.setSenderPromptUseNewFolder(false);
-                      s.setSenderPromptNewFolder("");
-                    }}
-                  >
-                    Liste
-                  </button>
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap gap-1 items-end">
+                    <div>
+                      <label className="block text-[10px] glass-text-muted mb-0.5">Übergeordneter Ordner</label>
+                      <select
+                        value={s.senderPromptFolder}
+                        onChange={(e) => s.setSenderPromptFolder(e.target.value)}
+                        className="glass-select rounded-lg px-2 py-1 text-sm min-w-[12rem]"
+                      >
+                        {s.folders.length === 0 ? (
+                          <option value="INBOX">INBOX</option>
+                        ) : (
+                          s.folders.map((f) => (
+                            <option key={f.path} value={f.path}>{f.path}</option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] glass-text-muted mb-0.5">Neuer Ordnername</label>
+                      <input
+                        type="text"
+                        value={s.senderPromptNewFolder}
+                        onChange={(e) => s.setSenderPromptNewFolder(e.target.value)}
+                        placeholder="z.B. DeutschePost"
+                        className="glass-input rounded-lg px-2 py-1 text-sm min-w-[10rem]"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="glass-btn rounded-lg px-2 py-1 text-xs whitespace-nowrap"
+                      onClick={() => {
+                        s.setSenderPromptUseNewFolder(false);
+                        s.setSenderPromptNewFolder("");
+                      }}
+                    >
+                      Bestehenden wählen
+                    </button>
+                  </div>
+                  <p className="text-[11px] glass-text-secondary">
+                    Wird erstellt als:{" "}
+                    <span className="font-medium glass-text-primary">
+                      {[
+                        s.senderPromptFolder || "INBOX",
+                        s.senderPromptNewFolder.trim().replace(/^\/+|\/+$/g, ""),
+                      ]
+                        .filter(Boolean)
+                        .join("/")}
+                    </span>
+                  </p>
                 </div>
               )}
             </div>
