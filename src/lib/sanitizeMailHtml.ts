@@ -142,6 +142,8 @@ function linkifyBareUrlsBetweenTags(html: string): string {
 
 export interface SafeMailOptions {
   allowExternalImages?: boolean;
+  /** When "dark", render mail on a light paper surface so HTML stays readable. */
+  theme?: "light" | "dark";
 }
 
 export function buildSafeMailDocument(
@@ -149,6 +151,7 @@ export function buildSafeMailDocument(
   options?: SafeMailOptions,
 ): string {
   const allowImg = options?.allowExternalImages ?? false;
+  const theme = options?.theme ?? "light";
   const firstPass = sanitizeMailHtml(rawHtml, { allowExternalImages: allowImg });
   const withLinks =
     firstPass && !htmlContainsAnchorTag(firstPass)
@@ -182,13 +185,20 @@ img[data-blocked-src]::after{
   padding:4px 8px;text-align:center;
 }`;
 
+  // Emails are authored for light backgrounds. In app dark mode we keep a light
+  // "paper" surface inside the iframe so dark text stays readable.
+  const surfaceBg = "#ffffff";
+  const surfaceColor = "#1e293b";
+  const colorScheme = theme === "dark" ? "light" : "light";
+
   return `<!doctype html>
 <html><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="${colorScheme}" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; ${imgCSP} style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-src 'none'; script-src 'unsafe-inline';" />
 <style>
-html{height:auto!important;max-height:none!important;overflow-x:hidden!important;overflow-y:auto;-webkit-overflow-scrolling:touch}
-body{height:auto!important;max-height:none!important;min-height:min-content;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1e293b;margin:0;padding:12px;font-size:14px;line-height:1.6;box-sizing:border-box;word-wrap:break-word;overflow-wrap:break-word}
+html{height:auto!important;max-height:none!important;overflow-x:hidden!important;overflow-y:auto;-webkit-overflow-scrolling:touch;background:${surfaceBg}!important;color-scheme:${colorScheme}}
+body{height:auto!important;max-height:none!important;min-height:min-content;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${surfaceColor};background:${surfaceBg}!important;margin:0;padding:12px;font-size:14px;line-height:1.6;box-sizing:border-box;word-wrap:break-word;overflow-wrap:break-word}
 *,*::before,*::after{box-sizing:inherit}
 img{max-width:100%!important;height:auto!important}
 table{max-width:100%!important;width:100%!important;table-layout:fixed!important}

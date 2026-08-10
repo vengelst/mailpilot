@@ -658,6 +658,8 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
       s.setSenderPromptData({ email: email.fromEmail, domain, fromName: email.fromName ?? "" });
       s.setSenderPromptCategory("Sonstiges");
       s.setSenderPromptFolder("");
+      s.setSenderPromptUseNewFolder(false);
+      s.setSenderPromptNewFolder("");
       s.setSenderPromptAutoLabels([]);
       s.setSenderPromptNewLabel("");
       s.setSenderPromptVisible(true);
@@ -667,6 +669,8 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
   async function handleSenderPromptSave() {
     if (!s.senderPromptData) return;
     s.setSenderPromptSaving(true);
+    s.setUiError("");
+    let saved = false;
     try {
       const suggestRes = await fetch("/api/sender-profiles/suggest", {
         method: "POST",
@@ -675,8 +679,35 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
       });
       const suggestion = suggestRes.ok ? await suggestRes.json() : null;
 
-      const targetFolder = s.senderPromptFolder || "INBOX";
+      const targetFolder = (
+        s.senderPromptUseNewFolder
+          ? s.senderPromptNewFolder
+          : s.senderPromptFolder
+      ).trim() || "INBOX";
       const autoLabels = [...new Set(s.senderPromptAutoLabels.map((l) => l.trim()).filter(Boolean))];
+
+      // Create new IMAP folder if the user typed a path that does not exist yet
+      if (
+        s.senderPromptUseNewFolder &&
+        targetFolder &&
+        targetFolder !== "INBOX" &&
+        !s.folders.some((f) => f.path === targetFolder)
+      ) {
+        if (!s.selectedAccountId || s.isAllAccounts) {
+          s.setUiError("Für einen neuen Ordner bitte ein einzelnes Konto wählen.");
+          return;
+        }
+        const createRes = await fetch(`/api/accounts/${s.selectedAccountId}/folders/manage`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "create", path: targetFolder }),
+        });
+        if (!createRes.ok) {
+          s.setUiError(await readErrorMessage(createRes, "Zielordner konnte nicht erstellt werden."));
+          return;
+        }
+        await sync.reloadFolders();
+      }
 
       // Ensure EmailLabel definitions exist for selected auto-labels
       for (const labelName of autoLabels) {
@@ -701,6 +732,7 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
         }),
       });
       s.setUiInfo(`Absender-Profil für ${s.senderPromptData.domain || s.senderPromptData.email} erstellt.`);
+      saved = true;
 
       const currentEmail = s.selectedEmail;
       if (currentEmail) {
@@ -728,10 +760,14 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
       s.setUiError("Absender-Profil konnte nicht erstellt werden.");
     } finally {
       s.setSenderPromptSaving(false);
-      s.setSenderPromptVisible(false);
-      s.setSenderPromptData(null);
-      s.setSenderPromptAutoLabels([]);
-      s.setSenderPromptNewLabel("");
+      if (saved) {
+        s.setSenderPromptVisible(false);
+        s.setSenderPromptData(null);
+        s.setSenderPromptAutoLabels([]);
+        s.setSenderPromptNewLabel("");
+        s.setSenderPromptUseNewFolder(false);
+        s.setSenderPromptNewFolder("");
+      }
     }
   }
 
@@ -740,6 +776,8 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
     s.setSenderPromptData(null);
     s.setSenderPromptAutoLabels([]);
     s.setSenderPromptNewLabel("");
+    s.setSenderPromptUseNewFolder(false);
+    s.setSenderPromptNewFolder("");
   }
 
   async function handleSenderPromptIgnore() {
@@ -762,6 +800,8 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
     s.setSenderPromptData(null);
     s.setSenderPromptAutoLabels([]);
     s.setSenderPromptNewLabel("");
+    s.setSenderPromptUseNewFolder(false);
+    s.setSenderPromptNewFolder("");
   }
 
   // ---------------------------------------------------------------------------

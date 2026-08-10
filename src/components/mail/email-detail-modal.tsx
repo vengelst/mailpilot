@@ -183,7 +183,16 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
   }, [emailId]);
 
   const safeMailDocument = useMemo(
-    () => (body?.html ? buildSafeMailDocument(body.html, { allowExternalImages: showExternalImages }) : ""),
+    () =>
+      body?.html
+        ? buildSafeMailDocument(body.html, {
+            allowExternalImages: showExternalImages,
+            theme:
+              typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+                ? "dark"
+                : "light",
+          })
+        : "",
     [body, showExternalImages],
   );
 
@@ -466,12 +475,12 @@ export function EmailDetailModal({ emailId, onClose, onAction }: EmailDetailModa
                     sandbox="allow-scripts"
                     srcDoc={safeMailDocument}
                     referrerPolicy="no-referrer"
-                    className="glass h-[60vh] w-full rounded-xl"
+                    className="h-[60vh] w-full rounded-xl bg-white"
                     style={{ border: "none", maxWidth: "100%", overflow: "hidden" }}
                   />
                 </div>
               ) : (
-                <div className="glass whitespace-pre-wrap rounded-xl p-4 text-sm leading-relaxed glass-text-secondary">
+                <div className="whitespace-pre-wrap rounded-xl bg-white p-4 text-sm leading-relaxed text-slate-800">
                   {body?.text ||
                     email.textPreview ||
                     email.snippet ||

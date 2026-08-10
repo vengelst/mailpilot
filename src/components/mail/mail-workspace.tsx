@@ -114,7 +114,13 @@ export function MailWorkspace() {
   const safeMailDocument = useMemo(
     () =>
       s.bodyContent?.html
-        ? buildSafeMailDocument(s.bodyContent.html, { allowExternalImages: s.showExternalImages })
+        ? buildSafeMailDocument(s.bodyContent.html, {
+            allowExternalImages: s.showExternalImages,
+            theme:
+              typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+                ? "dark"
+                : "light",
+          })
         : "",
     [s.bodyContent, s.showExternalImages],
   );
@@ -1154,10 +1160,10 @@ export function MailWorkspace() {
                       <button onClick={() => s.setShowExternalImages(true)} className="glass-btn rounded-lg px-3 py-1 text-xs shrink-0 ml-2">Bilder laden</button>
                     </div>
                   ) : null}
-                  <iframe ref={s.mailBodyIframeRef} title="Mailinhalt vergrößert" sandbox="allow-scripts" srcDoc={safeMailDocument} referrerPolicy="no-referrer" className="block w-full flex-1 min-h-[60vh] rounded-xl glass" style={{ border: "none", maxWidth: "100%", overflow: "hidden" }} />
+                  <iframe ref={s.mailBodyIframeRef} title="Mailinhalt vergrößert" sandbox="allow-scripts" srcDoc={safeMailDocument} referrerPolicy="no-referrer" className="block w-full flex-1 min-h-[60vh] rounded-xl bg-white" style={{ border: "none", maxWidth: "100%", overflow: "hidden" }} />
                 </div>
               ) : (
-                <div className="glass min-h-[50vh] whitespace-pre-wrap rounded-xl p-4 text-sm leading-relaxed glass-text-secondary">
+                <div className="min-h-[50vh] whitespace-pre-wrap rounded-xl bg-white p-4 text-sm leading-relaxed text-slate-800">
                   {(() => {
                     const plain = s.bodyContent.text || s.selectedEmail.textPreview || s.selectedEmail.snippet || "";
                     return plain ? linkifyMailPlainText(plain) : "(Kein Mailinhalt verfügbar.)";

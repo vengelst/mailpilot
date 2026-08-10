@@ -29,13 +29,22 @@ type Props = {
   openMobilePane: (pane: "left" | "middle" | "right") => void;
 };
 
+function currentUiTheme(): "light" | "dark" {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
 export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
+  const uiTheme = currentUiTheme();
   const safeMailDocument = useMemo(
     () =>
       s.bodyContent?.html
-        ? buildSafeMailDocument(s.bodyContent.html, { allowExternalImages: s.showExternalImages })
+        ? buildSafeMailDocument(s.bodyContent.html, {
+            allowExternalImages: s.showExternalImages,
+            theme: uiTheme,
+          })
         : "",
-    [s.bodyContent, s.showExternalImages],
+    [s.bodyContent, s.showExternalImages, uiTheme],
   );
 
   if (!s.selectedEmail) {
@@ -171,10 +180,47 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
             </div>
             <div>
               <label className="block text-xs glass-text-muted mb-0.5">Zielordner</label>
-              <select value={s.senderPromptFolder} onChange={(e) => s.setSenderPromptFolder(e.target.value)} className="glass-select rounded-lg px-2 py-1 text-sm">
-                <option value="">— Ordner wählen —</option>
-                {s.folders.map((f) => <option key={f.path} value={f.path}>{f.path}</option>)}
-              </select>
+              {!s.senderPromptUseNewFolder ? (
+                <div className="flex gap-1">
+                  <select value={s.senderPromptFolder} onChange={(e) => s.setSenderPromptFolder(e.target.value)} className="glass-select rounded-lg px-2 py-1 text-sm">
+                    <option value="">— Ordner wählen —</option>
+                    {s.folders.map((f) => <option key={f.path} value={f.path}>{f.path}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    className="glass-btn rounded-lg px-2 py-1 text-xs whitespace-nowrap"
+                    onClick={() => {
+                      s.setSenderPromptUseNewFolder(true);
+                      const suggestion = s.senderPromptData?.domain
+                        ? `INBOX/Kunden/${s.senderPromptData.domain.split(".")[0] ?? s.senderPromptData.domain}`
+                        : "INBOX/";
+                      s.setSenderPromptNewFolder(suggestion);
+                    }}
+                  >
+                    Neu…
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    value={s.senderPromptNewFolder}
+                    onChange={(e) => s.setSenderPromptNewFolder(e.target.value)}
+                    placeholder="z.B. INBOX/Kunden/Firma"
+                    className="glass-input rounded-lg px-2 py-1 text-sm min-w-[14rem]"
+                  />
+                  <button
+                    type="button"
+                    className="glass-btn rounded-lg px-2 py-1 text-xs whitespace-nowrap"
+                    onClick={() => {
+                      s.setSenderPromptUseNewFolder(false);
+                      s.setSenderPromptNewFolder("");
+                    }}
+                  >
+                    Liste
+                  </button>
+                </div>
+              )}
             </div>
             <div className="flex gap-1">
               <button type="button" onClick={() => void actions.handleSenderPromptSave()} disabled={s.senderPromptSaving} className="glass-btn-primary rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50">{s.senderPromptSaving ? "..." : "Profil speichern"}</button>
@@ -327,7 +373,7 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
               sandbox="allow-scripts"
               srcDoc={safeMailDocument}
               referrerPolicy="no-referrer"
-              className="block w-full rounded-xl glass lg:flex-1"
+              className="block w-full rounded-xl bg-white lg:flex-1"
               style={{ border: "none", maxWidth: "100%", minHeight: "80dvh", overflowX: "hidden" }}
             />
           </div>
@@ -348,7 +394,7 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
                 <button onClick={() => void sync.loadBody(email.id, true)} className="glass-btn rounded-lg px-3 py-1 text-xs">HTML-Version laden</button>
               </div>
             ) : null}
-            <div className="glass flex-1 max-w-full whitespace-pre-wrap break-words rounded-xl p-4 text-sm leading-relaxed glass-text-secondary" style={{ minHeight: "400px" }}>
+            <div className="flex-1 max-w-full whitespace-pre-wrap break-words rounded-xl bg-white p-4 text-sm leading-relaxed text-slate-800" style={{ minHeight: "400px" }}>
               {(() => {
                 const plain = s.bodyContent?.text || email.textPreview || email.snippet || "";
                 return plain ? linkifyMailPlainText(plain) : "(Kein Mailinhalt verfügbar.)";
