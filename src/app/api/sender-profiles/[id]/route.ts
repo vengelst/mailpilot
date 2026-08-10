@@ -11,6 +11,7 @@ const updateSchema = z.object({
   targetFolder: z.string().min(1).optional(),
   accountId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
+  autoLabels: z.array(z.string().min(1)).optional(),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -40,6 +41,11 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   try {
     const body = updateSchema.parse(await req.json());
 
+    const autoLabels =
+      body.autoLabels !== undefined
+        ? [...new Set(body.autoLabels.map((l) => l.trim()).filter(Boolean))]
+        : undefined;
+
     const profile = await prisma.senderProfile.update({
       where: { id },
       data: {
@@ -51,6 +57,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
         ...(body.targetFolder !== undefined && { targetFolder: body.targetFolder }),
         ...(body.accountId !== undefined && { accountId: body.accountId }),
         ...(body.isActive !== undefined && { isActive: body.isActive }),
+        ...(autoLabels !== undefined && { autoLabels }),
       },
     });
 

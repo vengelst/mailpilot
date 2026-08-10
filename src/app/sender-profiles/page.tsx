@@ -11,12 +11,14 @@ type SenderProfile = {
   accountId: string | null;
   isActive: boolean;
   emailCount: number;
+  autoLabels: string[];
   createdAt: string;
 };
 
 type FolderInfo = { path: string; count: number };
 type ImapFolder = { path: string; name: string; totalCount?: number };
 type AccountInfo = { id: string; name: string };
+type LabelInfo = { id: string; name: string; color: string | null };
 
 const CATEGORIES = [
   "Kunde",
@@ -33,6 +35,7 @@ export default function SenderProfilesPage() {
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [imapFolders, setImapFolders] = useState<ImapFolder[]>([]);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+  const [availableLabels, setAvailableLabels] = useState<LabelInfo[]>([]);
   const [search, setSearch] = useState("");
 
   const [showEditor, setShowEditor] = useState(false);
@@ -45,6 +48,8 @@ export default function SenderProfilesPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [useNewFolder, setUseNewFolder] = useState(false);
   const [accountId, setAccountId] = useState<string>("");
+  const [autoLabels, setAutoLabels] = useState<string[]>([]);
+  const [autoLabelInput, setAutoLabelInput] = useState("");
   const [applyExisting, setApplyExisting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -75,9 +80,10 @@ export default function SenderProfilesPage() {
 
   const loadMeta = useCallback(async () => {
     try {
-      const [foldersRes, accountsRes] = await Promise.all([
+      const [foldersRes, accountsRes, labelsRes] = await Promise.all([
         fetch("/api/rules/categories"),
         fetch("/api/accounts"),
+        fetch("/api/labels"),
       ]);
       const foldersData = await foldersRes.json();
       setFolders(foldersData.folders ?? []);
@@ -87,6 +93,16 @@ export default function SenderProfilesPage() {
           (accountsData.accounts ?? []).map((a: { id: string; name: string }) => ({
             id: a.id,
             name: a.name,
+          })),
+        );
+      }
+      if (labelsRes.ok) {
+        const labelsData = await labelsRes.json();
+        setAvailableLabels(
+          (labelsData.labels ?? []).map((l: LabelInfo) => ({
+            id: l.id,
+            name: l.name,
+            color: l.color ?? null,
           })),
         );
       }
@@ -141,6 +157,8 @@ export default function SenderProfilesPage() {
     setNewFolderName("");
     setUseNewFolder(false);
     setAccountId("");
+    setAutoLabels([]);
+    setAutoLabelInput("");
     setApplyExisting(false);
     setError("");
   }
@@ -154,6 +172,7 @@ export default function SenderProfilesPage() {
       setCategory(profile.category);
       setTargetFolder(profile.targetFolder);
       setAccountId(profile.accountId ?? "");
+      setAutoLabels([...(profile.autoLabels ?? [])]);
       if (profile.accountId) {
         void loadImapFolders(profile.accountId);
       }
@@ -170,6 +189,19 @@ export default function SenderProfilesPage() {
 
   function removePattern(index: number) {
     setPatterns((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function toggleAutoLabel(name: string) {
+    setAutoLabels((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
+    );
+  }
+
+  function addAutoLabelFromInput() {
+    const val = autoLabelInput.trim();
+    if (!val || autoLabels.includes(val)) return;
+    setAutoLabels((prev) => [...prev, val]);
+    setAutoLabelInput("");
   }
 
   async function handleSave() {
@@ -190,11 +222,24 @@ export default function SenderProfilesPage() {
     setSaving(true);
     setError("");
     try {
+      const cleanedAutoLabels = [...new Set(autoLabels.map((l) => l.trim()).filter(Boolean))];
+
+      for (const labelName of cleanedAutoLabels) {
+        if (!availableLabels.some((l) => l.name === labelName)) {
+          await fetch("/api/labels", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: labelName }),
+          }).catch(() => {});
+        }
+      }
+
       const payload = {
         profileName: profileName.trim(),
         patterns,
         category,
         targetFolder: folder,
+        autoLabels: cleanedAutoLabels,
         ...(accountId ? { accountId } : {}),
       };
 
@@ -226,6 +271,7 @@ export default function SenderProfilesPage() {
       setShowEditor(false);
       resetEditor();
       await loadProfiles();
+      await loadMeta();
     } catch {
       setError("Speichern fehlgeschlagen");
     } finally {
@@ -482,6 +528,82 @@ export default function SenderProfilesPage() {
               )}
             </div>
 
+            {/* Auto-Labels */}
+            <div>
+              <label className="block text-xs glass-text-secondary mb-1">
+                Auto-Labels
+              </label>
+              <p className="text-[11px] glass-text-tertiary mb-2">
+                Werden beim Verschieben nach dem Lesen automatisch gesetzt.
+              </p>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {availableLabels.map((label) => {
+                  const checked = autoLabels.includes(label.name);
+                  return (
+                    <label
+                      key={label.id}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs glass-text-secondary cursor-pointer hover:bg-white/10"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleAutoLabel(label.name)}
+                        className="rounded"
+                      />
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: label.color || "#6b7280" }}
+                      />
+                      {label.name}
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="glass rounded-lg px-3 py-2 text-sm glass-text-primary flex-1"
+                  placeholder="Neues Label…"
+                  value={autoLabelInput}
+                  onChange={(e) => setAutoLabelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addAutoLabelFromInput();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={addAutoLabelFromInput}
+                  className="glass-btn px-3 py-2 rounded-lg text-sm"
+                >
+                  Hinzufügen
+                </button>
+              </div>
+              {autoLabels.some((n) => !availableLabels.some((l) => l.name === n)) ? (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {autoLabels
+                    .filter((n) => !availableLabels.some((l) => l.name === n))
+                    .map((name) => (
+                      <span
+                        key={name}
+                        className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] glass-text-secondary"
+                      >
+                        {name}
+                        <button
+                          type="button"
+                          onClick={() => toggleAutoLabel(name)}
+                          className="hover:text-red-400"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                </div>
+              ) : null}
+            </div>
+
             {/* Apply to existing */}
             {!editingProfile && (
               <label className="flex items-center gap-2 text-xs glass-text-secondary cursor-pointer">
@@ -567,6 +689,18 @@ export default function SenderProfilesPage() {
                   <p className="text-[11px] glass-text-tertiary mt-1 truncate">
                     → {profile.targetFolder}
                   </p>
+                  {(profile.autoLabels ?? []).length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {(profile.autoLabels ?? []).map((label) => (
+                        <span
+                          key={label}
+                          className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-600/20 text-emerald-200"
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-1 shrink-0 flex-wrap">
                   <button

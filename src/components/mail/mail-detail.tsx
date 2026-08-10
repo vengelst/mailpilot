@@ -182,6 +182,89 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
               <button type="button" onClick={() => void actions.handleSenderPromptIgnore()} disabled={s.senderPromptSaving} className="glass-btn rounded-lg px-3 py-1 text-xs glass-text-muted disabled:opacity-50">Nie wieder fragen</button>
             </div>
           </div>
+          <div className="mt-2">
+            <label className="block text-xs glass-text-muted mb-1">Auto-Labels (optional)</label>
+            <div className="flex flex-wrap gap-2">
+              {s.labelList.map((label) => {
+                const checked = s.senderPromptAutoLabels.includes(label.name);
+                return (
+                  <label key={label.id} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs glass-text-secondary cursor-pointer hover:bg-white/20">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        s.setSenderPromptAutoLabels((prev) =>
+                          checked ? prev.filter((n) => n !== label.name) : [...prev, label.name],
+                        );
+                      }}
+                      className="rounded"
+                    />
+                    <span
+                      className="inline-block h-2 w-2 rounded-full"
+                      style={{ backgroundColor: label.color || "#6b7280" }}
+                    />
+                    {label.name}
+                  </label>
+                );
+              })}
+              {s.labelList.length === 0 ? (
+                <span className="text-xs glass-text-muted">Keine Labels vorhanden – unter Labels anlegen oder unten eingeben.</span>
+              ) : null}
+            </div>
+            <div className="mt-1.5 flex gap-2 max-w-sm">
+              <input
+                type="text"
+                value={s.senderPromptNewLabel}
+                onChange={(e) => s.setSenderPromptNewLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  const name = s.senderPromptNewLabel.trim();
+                  if (!name) return;
+                  s.setSenderPromptAutoLabels((prev) =>
+                    prev.includes(name) ? prev : [...prev, name],
+                  );
+                  s.setSenderPromptNewLabel("");
+                }}
+                placeholder="Neues Label…"
+                className="glass-input flex-1 rounded-lg px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                className="glass-btn rounded-lg px-2 py-1 text-xs"
+                onClick={() => {
+                  const name = s.senderPromptNewLabel.trim();
+                  if (!name) return;
+                  s.setSenderPromptAutoLabels((prev) =>
+                    prev.includes(name) ? prev : [...prev, name],
+                  );
+                  s.setSenderPromptNewLabel("");
+                }}
+              >
+                Hinzufügen
+              </button>
+            </div>
+            {s.senderPromptAutoLabels.some((n) => !s.labelList.some((l) => l.name === n)) ? (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {s.senderPromptAutoLabels
+                  .filter((n) => !s.labelList.some((l) => l.name === n))
+                  .map((name) => (
+                    <span key={name} className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[11px] glass-text-secondary">
+                      {name}
+                      <button
+                        type="button"
+                        className="hover:text-red-400"
+                        onClick={() =>
+                          s.setSenderPromptAutoLabels((prev) => prev.filter((n) => n !== name))
+                        }
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

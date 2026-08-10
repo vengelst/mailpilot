@@ -650,6 +650,8 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
       s.setSenderPromptData({ email: email.fromEmail, domain, fromName: email.fromName ?? "" });
       s.setSenderPromptCategory("Sonstiges");
       s.setSenderPromptFolder("");
+      s.setSenderPromptAutoLabels([]);
+      s.setSenderPromptNewLabel("");
       s.setSenderPromptVisible(true);
     } catch { /* ignore */ }
   }
@@ -666,6 +668,19 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
       const suggestion = suggestRes.ok ? await suggestRes.json() : null;
 
       const targetFolder = s.senderPromptFolder || "INBOX";
+      const autoLabels = [...new Set(s.senderPromptAutoLabels.map((l) => l.trim()).filter(Boolean))];
+
+      // Ensure EmailLabel definitions exist for selected auto-labels
+      for (const labelName of autoLabels) {
+        if (!s.labelList.some((l) => l.name === labelName)) {
+          await fetch("/api/labels", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: labelName }),
+          }).catch(() => {});
+        }
+      }
+
       await fetch("/api/sender-profiles", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -674,18 +689,28 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
           patterns: suggestion?.patterns ?? [s.senderPromptData.domain || s.senderPromptData.email],
           category: s.senderPromptCategory,
           targetFolder,
+          autoLabels,
         }),
       });
       s.setUiInfo(`Absender-Profil für ${s.senderPromptData.domain || s.senderPromptData.email} erstellt.`);
 
-      if (targetFolder && targetFolder !== "INBOX" && s.selectedEmail) {
+      const currentEmail = s.selectedEmail;
+      if (currentEmail) {
         const domain = s.senderPromptData.domain;
-        const emailMatch = s.selectedEmail.fromEmail &&
-          (s.selectedEmail.fromEmail === s.senderPromptData.email ||
-            (domain && s.selectedEmail.fromEmail.endsWith(`@${domain}`))) &&
-          s.selectedEmail.folderPath === "INBOX";
-        if (emailMatch) {
-          const id = s.selectedEmail.id;
+        const emailMatch = currentEmail.fromEmail &&
+          (currentEmail.fromEmail === s.senderPromptData.email ||
+            (domain && currentEmail.fromEmail.endsWith(`@${domain}`)));
+
+        if (emailMatch && autoLabels.length > 0) {
+          for (const label of autoLabels) {
+            if (!(currentEmail.labels ?? []).includes(label)) {
+              await addLabelToEmail(currentEmail.id, label);
+            }
+          }
+        }
+
+        if (emailMatch && targetFolder && targetFolder !== "INBOX" && currentEmail.folderPath === "INBOX") {
+          const id = currentEmail.id;
           s.setEmails((prev) => prev.filter((e) => e.id !== id));
           s.setSelectedEmail(null);
           void runActionForEmail(id, `/api/emails/${id}/move`, { targetFolder });
@@ -697,12 +722,16 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
       s.setSenderPromptSaving(false);
       s.setSenderPromptVisible(false);
       s.setSenderPromptData(null);
+      s.setSenderPromptAutoLabels([]);
+      s.setSenderPromptNewLabel("");
     }
   }
 
   function handleSenderPromptSkip() {
     s.setSenderPromptVisible(false);
     s.setSenderPromptData(null);
+    s.setSenderPromptAutoLabels([]);
+    s.setSenderPromptNewLabel("");
   }
 
   async function handleSenderPromptIgnore() {
@@ -723,6 +752,8 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
     s.setSenderPromptSaving(false);
     s.setSenderPromptVisible(false);
     s.setSenderPromptData(null);
+    s.setSenderPromptAutoLabels([]);
+    s.setSenderPromptNewLabel("");
   }
 
   // ---------------------------------------------------------------------------

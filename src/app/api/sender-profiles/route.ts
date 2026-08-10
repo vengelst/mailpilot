@@ -10,6 +10,7 @@ const createSchema = z.object({
   category: z.string().min(1),
   targetFolder: z.string().min(1),
   accountId: z.string().optional(),
+  autoLabels: z.array(z.string().min(1)).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -49,6 +50,10 @@ export async function POST(req: NextRequest) {
       if (!account) return fail("Konto nicht gefunden", 404);
     }
 
+    const autoLabels = [
+      ...new Set((body.autoLabels ?? []).map((l) => l.trim()).filter(Boolean)),
+    ];
+
     const profile = await prisma.senderProfile.create({
       data: {
         userId: session.userId,
@@ -57,6 +62,7 @@ export async function POST(req: NextRequest) {
         category: body.category,
         targetFolder: body.targetFolder,
         accountId: body.accountId ?? null,
+        autoLabels,
       },
     });
 

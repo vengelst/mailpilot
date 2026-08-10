@@ -161,6 +161,8 @@ export function useMailState() {
   } | null>(null);
   const [senderPromptCategory, setSenderPromptCategory] = useState("Sonstiges");
   const [senderPromptFolder, setSenderPromptFolder] = useState("");
+  const [senderPromptAutoLabels, setSenderPromptAutoLabels] = useState<string[]>([]);
+  const [senderPromptNewLabel, setSenderPromptNewLabel] = useState("");
   const [senderPromptSaving, setSenderPromptSaving] = useState(false);
 
   // --- Auto-move toast ---
@@ -419,6 +421,8 @@ export function useMailState() {
     senderPromptData, setSenderPromptData,
     senderPromptCategory, setSenderPromptCategory,
     senderPromptFolder, setSenderPromptFolder,
+    senderPromptAutoLabels, setSenderPromptAutoLabels,
+    senderPromptNewLabel, setSenderPromptNewLabel,
     senderPromptSaving, setSenderPromptSaving,
 
     // Auto-move

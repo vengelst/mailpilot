@@ -279,6 +279,16 @@ export function useMailSync(s: MailStateReturn) {
             if (mrData.movedTo) {
               s.pendingAutoMoveRef.current = { emailId: id, folder: mrData.movedTo };
             }
+            if (Array.isArray(mrData.labels) && mrData.labels.length > 0) {
+              const newLabels = mrData.labels as string[];
+              s.setSelectedEmail((prev: Email | null) =>
+                prev?.id === id ? { ...prev, labels: newLabels } : prev,
+              );
+              s.setEmails((prev) =>
+                prev.map((e) => (e.id === id ? { ...e, labels: newLabels } : e)),
+              );
+              void loadLabels();
+            }
           })
           .catch(() => {});
       }
