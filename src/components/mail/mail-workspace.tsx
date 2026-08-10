@@ -516,6 +516,7 @@ export function MailWorkspace() {
   // =========================================================================
 
   useEffect(() => { s.loadMoreEmailsRef.current = sync.loadMoreEmails; });
+  useEffect(() => { s.onEmailOpenedRef.current = (email) => { void actions.checkSenderOnOpen(email); }; });
   useEffect(() => { s.pendingSwipeTrashUndosRef.current = s.pendingSwipeTrashUndos; }, [s.pendingSwipeTrashUndos]);
   useEffect(() => { s.selectedAccountIdRef.current = s.selectedAccountId; }, [s.selectedAccountId]);
   useEffect(() => { s.selectedFolderPathRef.current = s.selectedFolderPath; }, [s.selectedFolderPath]);

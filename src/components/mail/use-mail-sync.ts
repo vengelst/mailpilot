@@ -302,6 +302,8 @@ export function useMailSync(s: MailStateReturn) {
           ),
         );
       }
+      // Restore Auto-Prompt: classify unknown senders when opening a mail
+      s.onEmailOpenedRef.current?.(emailData);
     }
     return emailData;
   }

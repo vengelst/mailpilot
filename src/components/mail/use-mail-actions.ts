@@ -636,7 +636,11 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
   }
 
   async function checkSenderOnOpen(email: Email) {
-    if (!email.fromEmail) return;
+    if (!email.fromEmail) {
+      s.setSenderPromptVisible(false);
+      s.setSenderPromptData(null);
+      return;
+    }
     if (s.checkedSenders.has(email.fromEmail)) return;
     s.checkedSenders.add(email.fromEmail);
     try {
@@ -645,7 +649,11 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
       );
       if (!res.ok) return;
       const data = await res.json();
-      if (data.matched) return;
+      if (data.matched) {
+        s.setSenderPromptVisible(false);
+        s.setSenderPromptData(null);
+        return;
+      }
       const domain = email.fromEmail.split("@")[1] ?? "";
       s.setSenderPromptData({ email: email.fromEmail, domain, fromName: email.fromName ?? "" });
       s.setSenderPromptCategory("Sonstiges");

@@ -169,6 +169,7 @@ export function useMailState() {
   const [autoMoveToast, setAutoMoveToast] = useState<{ emailId: string; folder: string } | null>(null);
   const autoMoveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAutoMoveRef = useRef<{ emailId: string; folder: string } | null>(null);
+  const onEmailOpenedRef = useRef<((email: Email) => void) | null>(null);
 
   // --- Compose ---
   const composeEditorRef = useRef<HTMLDivElement | null>(null);
@@ -429,6 +430,7 @@ export function useMailState() {
     autoMoveToast, setAutoMoveToast,
     autoMoveToastTimerRef,
     pendingAutoMoveRef,
+    onEmailOpenedRef,
 
     // Compose
     composeEditorRef,
