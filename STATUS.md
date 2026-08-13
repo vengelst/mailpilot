@@ -1,45 +1,62 @@
 # MailPilot Status
 
-Stand: 2026-04-29
+Stand: 2026-08-13
 
 ## Aktueller Gesamtstatus
 
-- App laeuft lokal auf Port `5600`.
-- Postgres laeuft via Docker Compose.
-- Domain ist final auf `mailpilot.vivahome.de` gesetzt.
-- Nginx-Config liegt im Repo unter `deploy/nginx/mailpilot.vivahome.de.conf`.
-- Zielpfad auf Server bleibt `/etc/nginx/sites-available` (mit Symlink nach `sites-enabled`).
+- **Live:** https://mailpilot.vivahome.de (`v1.0.0` + Folge-Commits auf `main`)
+- Server-Pfad: `/opt/mailpilot` (Docker Compose Prod)
+- Lokal: Port `5600`, Working Tree i.d.R. synchron mit `origin/main`
+- Postgres via Docker; Nginx unter `deploy/nginx/mailpilot.vivahome.de.conf`
 
-## Wichtige umgesetzte Fixes
+## Session 2026-08-10 – umgesetzte Aenderungen
 
-- Sicherheits-Hardening:
-  - Tenant-Scoping fuer `mark-read` / `mark-unread` korrigiert.
-  - OAuth `state` signiert + TTL geprueft.
-  - OAuth-Stub via `CLOUD_OAUTH_ALLOW_STUB` abgesichert.
-- Kontenverwaltung:
-  - Verbindungstest + Kontodatenanzeige in der UI.
-  - Konto-Loeschen repariert (nur lokal in MailPilot, nicht auf IMAP-Server).
-- Mail laden:
-  - Search-API Limitfehler behoben (`limit` bis 200), dadurch INBOX-Ansicht wieder funktionsfaehig.
-- UI/Theme:
-  - Hell/Dunkel-Switch global verfuegbar.
-  - Auf `/mail` sitzt der Switch links neben Logout.
-  - Dark-Mode Lesbarkeit verbessert (helle Schrift inkl. Inputs/Placeholder).
-  - Markierte Mail hat jetzt dicken roten Rand statt blauer Invertierung.
+### Absender-Profile / Auto-Labels
+- `SenderProfile.autoLabels` verdrahtet: API speichert Labels; beim Auto-Move nach Lesen werden Labels gesetzt
+- Klassifizierungs-Banner: Auto-Labels waehlbar (Checkboxen + neues Label)
+- Absender-Profile-Seite: Auto-Labels im Editor und in der Liste
 
-## Deployment-relevante Dateien
+### Absender-Banner (Klassifizierung)
+- `checkSenderOnOpen` wieder angebunden (war nach Workspace-Split verloren)
+- Verhalten:
+  - Profil vorhanden → nach Lesen Auto-Move in Zielordner
+  - Kein Profil → Banner mit Kategorie / Ordner / Labels
+- Neuer Ordner aus dem Banner:
+  1. **Neu…** → uebergeordneten Ordner aus Liste waehlen
+  2. Nur den **neuen Ordnernamen** eingeben
+  3. Vorschau-Pfad → beim Speichern wird der Ordner angelegt
 
-- `deploy/nginx/mailpilot.vivahome.de.conf`
-- `DEPLOYMENT.md`
-- `deploy/server-deploy.sh`
-- `abgleich/mail.ps1`
-- `.env.production.example`
+### Dark Mode / Lesbarkeit
+- App-Hintergrund und Glass-Panels dunkler; Sekundaertexte heller
+- Mail-Inhalt im Dark Mode auf weissem „Papier“-Hintergrund (HTML/Text lesbar)
 
-## Offene Hinweise
+### Auth
+- Login: `ve@vivahome.de` (Passwort bei Bedarf auf Server neu setzen; bcrypt-Hash ohne Shell-`$`-Expansion schreiben)
 
-- Nach Uebernahme der Nginx-Datei auf dem Server:
-  1. Symlink in `sites-enabled` setzen
-  2. `sudo nginx -t`
-  3. `sudo systemctl reload nginx`
-  4. TLS via `sudo certbot --nginx -d mailpilot.vivahome.de`
+## Wichtige aeltere Fixes (Auszug)
 
+- Sicherheits-Hardening (Tenant-Scoping, OAuth state/TTL, OAuth-Stub)
+- Kontenverwaltung, Search-Limit, Hell/Dunkel-Switch
+- Unified Inbox, Duplikate, Labels, Rechnungserkennung via Rules
+- Blocklist CRUD / Whitelist, Navigation, Auto-Update-Intervall
+
+## Offenes Backlog
+
+| Thema | Status |
+|-------|--------|
+| Cross-Account Copy/Move (Drag&Drop zwischen Konten) | Idee in `IDEAS.md`, nicht priorisiert |
+| `autoLabels` beim rueckwirkenden `/apply` | bewusst nicht im Scope |
+| Template-Switcher Glass ↔ 3D/Neumorphism | abgelehnt / auf Eis |
+
+## Deployment
+
+Nach Code-Aenderungen Standard:
+
+```bash
+git push
+ssh root@vivahome.de
+cd /opt/mailpilot
+git pull && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up --build -d
+```
+
+Relevante Dateien: `DEPLOYMENT.md`, `deploy/server-deploy.sh`, `docker-compose.prod.yml`
