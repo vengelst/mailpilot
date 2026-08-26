@@ -54,9 +54,8 @@ Nach Code-Aenderungen Standard:
 
 ```bash
 git push
-ssh root@vivahome.de
-cd /opt/mailpilot
-git pull && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up --build -d
+ssh vivahome.de
+sudo bash -lc 'cd /opt/mailpilot && git pull && docker compose -f docker-compose.prod.yml --env-file .env.production up --build -d'
 ```
 
 Relevante Dateien: `DEPLOYMENT.md`, `deploy/server-deploy.sh`, `docker-compose.prod.yml`
