@@ -409,22 +409,11 @@ export function useMailSync(s: MailStateReturn) {
   async function syncAllFolders(trigger: "manual" | "auto" = "manual") {
     if (!s.selectedAccountId || s.isAllAccounts) return;
     const accountId = s.selectedAccountId;
-    if (
-      trigger === "manual" &&
-      !window.confirm(
-        "Alle Ordner und Unterordner werden inkrementell synchronisiert (nur Header). Bei vielen Ordnern kann das dauern. Fortfahren?",
-      )
-    ) {
-      return;
-    }
     try {
       s.setIsSyncing(true);
       s.setSyncProgress({
         kind: "all_folders",
-        label:
-          trigger === "auto"
-            ? "Automatischer Delta-Sync (alle Ordner) läuft …"
-            : "Synchronisiere alle Ordner (Delta) …",
+        label: "Alle Ordner werden abgeglichen …",
         totalMails: 0,
         processedMails: 0,
         remainingMails: 0,
@@ -458,24 +447,31 @@ export function useMailSync(s: MailStateReturn) {
                   remainingMails?: number;
                   etaSeconds?: number | null;
                   isEstimate?: boolean;
+                  folderDone?: number;
+                  folderTotal?: number;
                   phase?: "preparing" | "running" | "finished" | "failed";
                   lastFolderPath?: string | null;
+                  message?: string | null;
                 } | null;
               };
               const progress = payload.progress;
               if (!progress) return;
               s.setSyncProgress((prev) => {
                 if (!prev || prev.kind !== "all_folders") return prev;
+                const folderPart =
+                  typeof progress.folderDone === "number" &&
+                  typeof progress.folderTotal === "number" &&
+                  progress.folderTotal > 0
+                    ? ` (${progress.folderDone}/${progress.folderTotal})`
+                    : "";
                 const phaseLabel =
                   progress.phase === "preparing"
-                    ? "Synchronisation wird vorbereitet …"
+                    ? "Ordnerliste wird geladen …"
                     : progress.phase === "finished"
-                      ? "Synchronisation abgeschlossen"
+                      ? "Alle Ordner abgeglichen"
                       : progress.phase === "failed"
-                        ? "Synchronisation fehlgeschlagen"
-                        : trigger === "auto"
-                          ? "Automatischer Delta-Sync (alle Ordner) läuft …"
-                          : "Synchronisiere alle Ordner (Delta) …";
+                        ? "Abgleich fehlgeschlagen"
+                        : `Alle Ordner werden abgeglichen${folderPart} …`;
                 return {
                   ...prev,
                   label: phaseLabel,
@@ -499,11 +495,7 @@ export function useMailSync(s: MailStateReturn) {
         body: JSON.stringify({ mode: "incremental" }),
       });
       if (!res.ok) {
-        const fallback =
-          trigger === "auto"
-            ? "Automatischer Delta-Sync (alle Ordner) fehlgeschlagen."
-            : "Alle-Ordner-Sync fehlgeschlagen.";
-        s.setUiError(await readErrorMessage(res, fallback));
+        s.setUiError(await readErrorMessage(res, "Alle Ordner konnten nicht abgeglichen werden."));
         return;
       }
       const data = (await res.json()) as {
@@ -515,13 +507,14 @@ export function useMailSync(s: MailStateReturn) {
       };
       const skipped = data.perFolder?.filter((p) => p.skipped).length ?? 0;
       if (trigger === "manual") {
-        s.setUiInfo(
-          `Alle-Ordner-Sync: ${data.folderCount} Ordner verarbeitet` +
-            (skipped > 0 ? `, ${skipped} übersprungen` : "") +
-            `, ${data.totalNew} neue Mails, ${data.totalFlagsUpdated} Flag-Änderungen` +
-            (data.totalRemoved > 0 ? `, ${data.totalRemoved} aus Index entfernt` : "") +
-            ".",
-        );
+        const parts = [
+          `${data.folderCount} Ordner`,
+          `${data.totalNew} neu`,
+        ];
+        if (data.totalFlagsUpdated > 0) parts.push(`${data.totalFlagsUpdated} Flags`);
+        if (data.totalRemoved > 0) parts.push(`${data.totalRemoved} entfernt`);
+        if (skipped > 0) parts.push(`${skipped} übersprungen`);
+        s.setUiInfo(`Abgleich fertig: ${parts.join(" · ")}.`);
       }
       await loadEmails();
       await reloadFolders();
@@ -539,8 +532,8 @@ export function useMailSync(s: MailStateReturn) {
     if (!s.selectedAccountId || s.isAllAccounts) return;
     s.setIsSyncing(true);
     s.setSyncProgress({
-      kind: "all_folders",
-      label: "Inbox-Check läuft …",
+      kind: "inbox",
+      label: "Inbox wird geprüft …",
       totalMails: 0,
       processedMails: 0,
       remainingMails: 0,
@@ -556,16 +549,25 @@ export function useMailSync(s: MailStateReturn) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        s.setUiError((data as { error?: string }).error ?? "Inbox-Check fehlgeschlagen.");
+        s.setUiError((data as { error?: string }).error ?? "Inbox-Prüfung fehlgeschlagen.");
       } else {
-        s.setUiInfo("Inbox-Check abgeschlossen.");
+        const data = (await res.json().catch(() => ({}))) as {
+          synced?: number;
+          newMails?: number;
+        };
+        const n = data.newMails ?? data.synced;
+        s.setUiInfo(
+          typeof n === "number" && n > 0
+            ? `Inbox geprüft · ${n} neu.`
+            : "Inbox geprüft · keine neuen Mails.",
+        );
         if (s.selectedFolderPathRef.current === "INBOX") {
           await loadEmails();
         }
         await reloadFolders();
       }
     } catch (e) {
-      s.setUiError(e instanceof Error ? e.message : "Inbox-Check fehlgeschlagen.");
+      s.setUiError(e instanceof Error ? e.message : "Inbox-Prüfung fehlgeschlagen.");
     } finally {
       s.setIsSyncing(false);
       s.setSyncProgress(null);

@@ -691,20 +691,6 @@ export function MailWorkspace() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync menu close
-  useEffect(() => {
-    if (!s.showSyncMenu) return;
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") s.setShowSyncMenu(false); }
-    function onClickAway(e: MouseEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target && target.closest("[data-sync-menu-root]")) return;
-      s.setShowSyncMenu(false);
-    }
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("click", onClickAway);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("click", onClickAway); };
-  }, [s.showSyncMenu]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Email detail menu close
   useEffect(() => {
     if (!s.emailDetailMenuOpen) return;
@@ -922,21 +908,24 @@ export function MailWorkspace() {
         <div className="relative ml-auto flex-1 md:max-w-md">
           <input value={s.query} onChange={(e) => s.setQuery(e.target.value)} placeholder="Suchen in Betreff, Absender, Inhalt..." className="glass-input w-full rounded-lg px-3 py-1.5 text-sm" />
         </div>
-        <div className="relative" data-sync-menu-root>
-          <button type="button" onClick={() => s.setShowSyncMenu((v) => !v)} disabled={s.isSyncing || !s.selectedAccountId || s.isAllAccounts} aria-haspopup="menu" aria-expanded={s.showSyncMenu} className="glass-btn-dark rounded-lg px-3 py-1.5 text-sm disabled:opacity-60" title={s.isAllAccounts ? "Sync nicht verfügbar im Alle-Konten-Modus" : "Synchronisationsoptionen"}>
-            {s.isSyncing ? "Synchronisiere..." : "Synchronisieren ▾"}
-          </button>
-          {s.showSyncMenu ? (
-            <div id="mailpilot-sync-menu" role="menu" className="glass-solid absolute right-0 z-30 mt-1 w-72 overflow-hidden rounded-xl">
-              <button role="menuitem" onClick={() => { s.setShowSyncMenu(false); void sync.syncAllFolders("manual"); }} disabled={s.isSyncing || !s.selectedAccountId || s.isAllAccounts} className="block w-full border-b glass-divider px-3 py-2 text-left text-sm hover:bg-white/30 disabled:opacity-50">
-                <span className="font-medium glass-text-primary">Delta-Sync (alle Ordner)</span>
-                <span className="block text-xs glass-text-tertiary">Standardlauf: Delta-Sync kontoweit über alle Verzeichnisse, inkl. Fortschritt + ETA</span>
-              </button>
-              <div className="px-3 py-2 text-xs glass-text-tertiary">Auto-Update nutzt denselben Delta-Sync im Intervall. Vollabgleich startet nie automatisch.</div>
-            </div>
-          ) : null}
-        </div>
-        <button type="button" onClick={() => void sync.checkNow()} disabled={s.isSyncing || !s.selectedAccountId || s.isAllAccounts} className="glass-btn rounded-lg px-3 py-1.5 text-sm disabled:opacity-50" title={s.isAllAccounts ? "Sync nicht verfügbar im Alle-Konten-Modus" : "Nur Inbox schnell prüfen (Fast-Sync)"}>Check jetzt</button>
+        <button
+          type="button"
+          onClick={() => void sync.checkNow()}
+          disabled={s.isSyncing || !s.selectedAccountId || s.isAllAccounts}
+          className="glass-btn-primary rounded-lg px-3 py-1.5 text-sm disabled:opacity-50"
+          title={s.isAllAccounts ? "Sync nicht verfügbar im Alle-Konten-Modus" : "Nur die Inbox schnell auf neue Mails prüfen"}
+        >
+          {s.isSyncing && s.syncProgress?.kind === "inbox" ? "Prüfe Inbox…" : "Inbox prüfen"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void sync.syncAllFolders("manual")}
+          disabled={s.isSyncing || !s.selectedAccountId || s.isAllAccounts}
+          className="glass-btn rounded-lg px-3 py-1.5 text-sm disabled:opacity-50"
+          title={s.isAllAccounts ? "Sync nicht verfügbar im Alle-Konten-Modus" : "Alle Ordner dieses Kontos abgleichen (kann bei vielen Ordnern dauern)"}
+        >
+          {s.isSyncing && s.syncProgress?.kind === "all_folders" ? "Gleiche ab…" : "Alle Ordner"}
+        </button>
         <button type="button" onClick={() => s.setAutomationDashboardOpen((v) => !v)} className="glass-btn rounded-lg px-3 py-1.5 text-sm" aria-expanded={s.automationDashboardOpen} title="Auto-Update Dashboard">Auto-Update</button>
         <a href="/search" title="Erweiterte Suche" className="glass-btn rounded-lg px-3 py-1.5 text-sm"><span className="hidden md:inline">Erweiterte Suche</span><span className="md:hidden">Suche</span></a>
         <a href="/duplicates" title="Duplikate erkennen" className="glass-btn rounded-lg px-3 py-1.5 text-sm"><span className="hidden md:inline">Duplikate</span><span className="md:hidden">Dupl.</span></a>
@@ -953,20 +942,29 @@ export function MailWorkspace() {
       {/* Sync progress bar */}
       {s.syncProgress ? (
         <div className="glass-info px-4 py-1.5" role="status" aria-live="polite">
-          <div className="flex items-center gap-3">
-            <span className="text-xs">{s.syncProgress.label}</span>
-            {s.syncProgress.kind === "all_folders" ? (
-              <span className="text-xs glass-text-tertiary">
-                Gesamt: {typeof s.syncProgress.totalMails === "number" ? s.syncProgress.totalMails : "…"} · Verbleibend: {typeof s.syncProgress.remainingMails === "number" ? s.syncProgress.remainingMails : "…"}{s.syncProgress.isEstimate ? " (Schätzung)" : ""}{typeof s.syncProgress.etaSeconds === "number" ? ` · ETA ~ ${Math.max(1, Math.round(s.syncProgress.etaSeconds / 60))} min` : " · ETA: …"}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-medium">{s.syncProgress.label}</span>
+            {s.syncProgress.kind === "all_folders" && s.syncProgress.lastFolderPath ? (
+              <span className="truncate text-xs glass-text-tertiary" title={s.syncProgress.lastFolderPath}>
+                Aktuell: {folderDisplayName(s.syncProgress.lastFolderPath)}
               </span>
             ) : null}
           </div>
-          {s.syncProgress.kind === "all_folders" ? (
-            <p className="mt-1 truncate text-[11px] glass-text-tertiary" title={s.syncProgress.lastFolderPath ?? undefined}>Ordner: {s.syncProgress.lastFolderPath ? folderDisplayName(s.syncProgress.lastFolderPath) : "wird ermittelt …"}</p>
-          ) : null}
-          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-blue-200/40" role="progressbar" aria-label={s.syncProgress.label} aria-valuetext={s.syncProgress.kind === "all_folders" && typeof s.syncProgress.remainingMails === "number" ? `${s.syncProgress.remainingMails} verbleibend` : "läuft"}>
-            {s.syncProgress.kind === "all_folders" && typeof s.syncProgress.totalMails === "number" && s.syncProgress.totalMails > 0 && typeof s.syncProgress.processedMails === "number" ? (
-              <div className="h-full rounded-full bg-blue-500 transition-[width] duration-700 ease-out" style={{ width: `${Math.max(2, Math.min(100, (s.syncProgress.processedMails / s.syncProgress.totalMails) * 100))}%` }} />
+          <div
+            className="mt-1 h-1 w-full overflow-hidden rounded-full bg-blue-200/40"
+            role="progressbar"
+            aria-label={s.syncProgress.label}
+          >
+            {s.syncProgress.kind === "all_folders" &&
+            typeof s.syncProgress.totalMails === "number" &&
+            s.syncProgress.totalMails > 0 &&
+            typeof s.syncProgress.processedMails === "number" ? (
+              <div
+                className="h-full rounded-full bg-blue-500 transition-[width] duration-700 ease-out"
+                style={{
+                  width: `${Math.max(2, Math.min(100, (s.syncProgress.processedMails / s.syncProgress.totalMails) * 100))}%`,
+                }}
+              />
             ) : (
               <div className="mailpilot-progress-bar h-full w-1/3 rounded-full bg-blue-500" />
             )}
@@ -1013,9 +1011,9 @@ export function MailWorkspace() {
             <article className="glass rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Status</p>
               <p className="mt-1 text-sm glass-text-primary">{s.runOnAppStart ? "Automatisch beim App-Start + Intervall" : "Automatisch nur nach Intervall"}</p>
-              <p className="mt-1 text-xs glass-text-tertiary">Automatik: Inbox-Sync alle {Math.max(1, Math.round(s.newMailCheckIntervalMinutes))} Minuten{typeof document !== "undefined" && document.visibilityState !== "visible" ? " (wartet bei inaktivem Tab)" : ""}</p>
-              <p className="mt-1 text-xs glass-text-tertiary">Bei Inaktivität (15 Min.): Inbox-Check</p>
-              <p className="mt-1 text-xs glass-text-tertiary">Manuell: &quot;Check jetzt&quot; prüft nur die Inbox (Fast-Sync). Alle Ordner nur über Sync ▾.</p>
+              <p className="mt-1 text-xs glass-text-tertiary">Automatik: Inbox alle {Math.max(1, Math.round(s.newMailCheckIntervalMinutes))} Minuten{typeof document !== "undefined" && document.visibilityState !== "visible" ? " (pausiert bei inaktivem Tab)" : ""}</p>
+              <p className="mt-1 text-xs glass-text-tertiary">Bei Inaktivität (15 Min.): zusätzliche Inbox-Prüfung</p>
+              <p className="mt-1 text-xs glass-text-tertiary">Manuell: &quot;Inbox prüfen&quot; (schnell) oder &quot;Alle Ordner&quot; (kompletter Abgleich)</p>
               <p className="mt-1 text-xs glass-text-tertiary">Nächster Lauf: {formatDateTime(s.nextScheduledRunAt)}</p>
             </article>
             <article className="glass rounded-xl p-3">

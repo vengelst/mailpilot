@@ -111,7 +111,6 @@ export function useMailState() {
   const dragExpandTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [emptyConfirmText, setEmptyConfirmText] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [showSyncMenu, setShowSyncMenu] = useState(false);
   const [newMailCheckIntervalMinutes, setNewMailCheckIntervalMinutes] = useState(30);
   const [runOnAppStart, setRunOnAppStart] = useState(false);
   const [folderCountDisplayMode, setFolderCountDisplayMode] = useState<"compact" | "uga">("compact");
@@ -378,7 +377,6 @@ export function useMailState() {
     dragExpandTimeoutRef,
     emptyConfirmText, setEmptyConfirmText,
     bulkBusy, setBulkBusy,
-    showSyncMenu, setShowSyncMenu,
     newMailCheckIntervalMinutes, setNewMailCheckIntervalMinutes,
     runOnAppStart, setRunOnAppStart,
     folderCountDisplayMode, setFolderCountDisplayMode,

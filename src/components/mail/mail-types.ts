@@ -145,7 +145,7 @@ export type ContactCandidate = {
 };
 
 export type SyncProgress = {
-  kind: "incremental" | "full" | "all_folders";
+  kind: "incremental" | "full" | "all_folders" | "inbox";
   label: string;
   totalMails?: number;
   processedMails?: number;
