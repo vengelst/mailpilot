@@ -5,7 +5,7 @@
  * and the Prisma database layer. This module owns:
  *   - Account credential resolution and decryption
  *   - Folder CRUD (create, rename, copy, delete) with local DB bookkeeping
- *   - Incremental and full email synchronisation (envelope + flags + body cache)
+ *   - Incremental and full email synchronisation (envelope + flags; bodies on demand)
  *   - Message operations: mark read/unread, move, bulk actions
  *   - Attachment download
  *   - Permanent purge of Trash/Spam folders (the only destructive IMAP path)
@@ -396,10 +396,8 @@ async function upsertFetchedMessages(
     const batchIds = results.map((r) => r.id);
     emailIds.push(...batchIds);
 
-    // Rebuild attachments: delete-all + createMany avoids orphaned/stale rows
-    await prisma.emailAttachment.deleteMany({
-      where: { emailId: { in: batchIds } },
-    });
+    // Rebuild attachments only when BODYSTRUCTURE reported any — avoids
+    // deleteMany/createMany on every flag/snippet-only upsert.
     const allAttachments = batch.flatMap((message, idx) =>
       message.attachments.map((att) => ({
         emailId: batchIds[idx],
@@ -410,6 +408,9 @@ async function upsertFetchedMessages(
       })),
     );
     if (allAttachments.length > 0) {
+      await prisma.emailAttachment.deleteMany({
+        where: { emailId: { in: batchIds } },
+      });
       await prisma.emailAttachment.createMany({ data: allAttachments });
     }
   }
@@ -527,8 +528,8 @@ export async function syncFolderEmailsFull(
  * Incremental sync:
  *  - detects UIDVALIDITY change → if changed, drops only the local index for
  *    THIS (accountId, folderPath) and re-runs a real full rebuild
- *  - otherwise fetches messages with UID > lastSeenUid (envelope + source)
- *  - refreshes flags for previously-known UIDs without re-downloading bodies
+ *  - otherwise fetches messages with UID > lastSeenUid (envelope + structure)
+ *  - reconciles flags/index only when EXISTS drifted or dropped
  *  - removes EmailIndex entries whose UID is no longer reported by the server
  *    (this is a LOCAL index cleanup — not an IMAP delete or EXPUNGE)
  */
@@ -609,10 +610,20 @@ export async function syncFolderEmailsIncremental(
       }
       const newEmailIds = await upsertFetchedMessages(accountId, folderPath, newMessages);
 
-      // --- Flag refresh for previously-known messages ---
+      // --- Flag / index reconcile (expensive: O(folder size)) ---
+      // Skip when the mailbox size is unchanged and there are no new UIDs —
+      // that covers the common idle Fast-Sync case. Reconcile when EXISTS
+      // dropped (deletes/moves) or drifted without new UIDs.
       let flagsUpdated = 0;
       let removedFromIndex = 0;
-      if (lastSeenUid > BIG_ZERO) {
+      const storedExists = folderRow.existsCount ?? 0;
+      const existsDropped = status.exists < storedExists;
+      const unexplainedDrift =
+        newMessages.length === 0 && status.exists !== storedExists;
+      const needsFullFlagReconcile =
+        lastSeenUid > BIG_ZERO && (existsDropped || unexplainedDrift);
+
+      if (needsFullFlagReconcile) {
         // Fetch current flag state from IMAP for all UIDs up to lastSeenUid
         const flagRange = `1:${lastSeenUid.toString()}`;
         const flagSnapshots =

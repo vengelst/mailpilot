@@ -50,8 +50,9 @@ const MOBILE_MAIN_HEADER_LS_KEY = "mailpilot.layout.mobileMainHeaderExpanded";
 const FOLDER_COUNT_MODE_LS_KEY = "mailpilot.layout.folderCountMode";
 const MOBILE_SWIPE_LEFT_ACTION_LS_KEY = "mailpilot.mobileSwipe.leftAction";
 const MOBILE_SWIPE_RIGHT_ACTION_LS_KEY = "mailpilot.mobileSwipe.rightAction";
-const FOLDER_REFRESH_INTERVAL_MS = 60 * 1000;
-const IDLE_FULL_SYNC_MS = 10 * 60 * 1000;
+const FOLDER_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+/** Idle inbox check (not all-folders) after this much inactivity. */
+const IDLE_INBOX_SYNC_MS = 15 * 60 * 1000;
 
 // ---- ResizeHandle ----
 
@@ -616,7 +617,9 @@ export function MailWorkspace() {
       }
       return;
     }
-    const timer = setTimeout(() => { void sync.loadFolders(s.selectedAccountId); }, 0);
+    const timer = setTimeout(() => {
+      void sync.loadFolders(s.selectedAccountId, { fromImap: true });
+    }, 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.selectedAccountId]);
@@ -791,7 +794,7 @@ export function MailWorkspace() {
     return () => { window.removeEventListener("click", markActive); window.removeEventListener("keydown", markActive); window.removeEventListener("scroll", markActive, true); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Idle full-sync timer
+  // Idle inbox sync (replaces misnamed "Vollsync" all-folders idle job)
   useEffect(() => {
     if (!s.selectedAccountId || s.isAllAccounts) return;
     const timer = setInterval(() => {
@@ -799,10 +802,16 @@ export function MailWorkspace() {
       if (s.isSyncing || s.autoCheckInFlightRef.current) return;
       if (s.idleFullSyncDoneRef.current) return;
       const idleMs = Date.now() - s.lastUserActionRef.current;
-      if (idleMs >= IDLE_FULL_SYNC_MS) {
+      if (idleMs >= IDLE_INBOX_SYNC_MS) {
         s.idleFullSyncDoneRef.current = true;
         s.autoCheckInFlightRef.current = true;
-        void (async () => { try { await sync.syncAllFolders("auto"); } finally { s.autoCheckInFlightRef.current = false; } })();
+        void (async () => {
+          try {
+            await sync.syncInboxOnly();
+          } finally {
+            s.autoCheckInFlightRef.current = false;
+          }
+        })();
       }
     }, 2 * 60 * 1000);
     return () => clearInterval(timer);
@@ -1005,8 +1014,8 @@ export function MailWorkspace() {
               <p className="text-xs font-semibold uppercase tracking-wide glass-text-muted">Status</p>
               <p className="mt-1 text-sm glass-text-primary">{s.runOnAppStart ? "Automatisch beim App-Start + Intervall" : "Automatisch nur nach Intervall"}</p>
               <p className="mt-1 text-xs glass-text-tertiary">Automatik: Inbox-Sync alle {Math.max(1, Math.round(s.newMailCheckIntervalMinutes))} Minuten{typeof document !== "undefined" && document.visibilityState !== "visible" ? " (wartet bei inaktivem Tab)" : ""}</p>
-              <p className="mt-1 text-xs glass-text-tertiary">Vollsync bei Inaktivität (nach 10 Min. Idle)</p>
-              <p className="mt-1 text-xs glass-text-tertiary">Manuell: &quot;Check jetzt&quot; prüft nur die Inbox (Fast-Sync).</p>
+              <p className="mt-1 text-xs glass-text-tertiary">Bei Inaktivität (15 Min.): Inbox-Check</p>
+              <p className="mt-1 text-xs glass-text-tertiary">Manuell: &quot;Check jetzt&quot; prüft nur die Inbox (Fast-Sync). Alle Ordner nur über Sync ▾.</p>
               <p className="mt-1 text-xs glass-text-tertiary">Nächster Lauf: {formatDateTime(s.nextScheduledRunAt)}</p>
             </article>
             <article className="glass rounded-xl p-3">

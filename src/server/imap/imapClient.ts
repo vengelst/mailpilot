@@ -193,10 +193,56 @@ async function parseMailSource(source?: Buffer) {
   }
 }
 
-/** Generate a max-240-char plain-text preview from the message text or stripped HTML. */
-function buildTextPreview(text: string, html: string) {
-  const fallback = text || html.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
-  return fallback.replace(/\s+/g, " ").trim().slice(0, 240);
+/** IMAP FETCH fields for index sync — no full MIME `source` (bodies load on open). */
+const SYNC_INDEX_FETCH = {
+  uid: true,
+  envelope: true,
+  flags: true,
+  size: true,
+  bodyStructure: true,
+} as const;
+
+type RawSyncFetchMessage = {
+  uid: number | bigint;
+  envelope?: {
+    messageId?: string;
+    subject?: string;
+    from?: Array<{ name?: string; address?: string }>;
+    to?: Array<{ address?: string }>;
+    cc?: Array<{ address?: string }>;
+    date?: Date;
+  };
+  flags?: Set<string>;
+  size?: number;
+  bodyStructure?: unknown;
+};
+
+/**
+ * Map envelope + BODYSTRUCTURE into index metadata without downloading the
+ * full message source. Snippet falls back to subject until the body is opened.
+ */
+function mapEnvelopeToMeta(raw: RawSyncFetchMessage): ImapMessageMeta {
+  const attachments = collectAttachments(raw.bodyStructure);
+  const envelope = raw.envelope;
+  const subject = (envelope?.subject ?? "").trim();
+  const snippet = subject.slice(0, 140);
+  return {
+    uid: BigInt(raw.uid),
+    messageId: envelope?.messageId,
+    subject: envelope?.subject,
+    fromName: envelope?.from?.[0]?.name,
+    fromEmail: envelope?.from?.[0]?.address,
+    toEmails: envelope?.to?.map((x) => x.address || "").filter(Boolean) || [],
+    ccEmails: envelope?.cc?.map((x) => x.address || "").filter(Boolean) || [],
+    date: envelope?.date,
+    snippet,
+    textPreview: snippet,
+    hasAttachments: attachments.length > 0,
+    attachmentCount: attachments.length,
+    flags: Array.from(raw.flags || []),
+    size: Number(raw.size || 0),
+    attachments,
+  };
 }
 
 /** Crude HTML-to-plain-text conversion (strips tags, collapses whitespace). */
@@ -352,53 +398,10 @@ export async function withImapSession<T>(
         const messages: ImapMessageMeta[] = [];
         for await (const message of client.fetch(
           uidRange,
-          {
-            uid: true,
-            envelope: true,
-            flags: true,
-            size: true,
-            bodyStructure: true,
-            source: true,
-          } as never,
+          SYNC_INDEX_FETCH as never,
           { uid: true } as never,
         )) {
-          const raw = message as unknown as {
-            uid: number;
-            envelope?: {
-              messageId?: string;
-              subject?: string;
-              from?: Array<{ name?: string; address?: string }>;
-              to?: Array<{ address?: string }>;
-              cc?: Array<{ address?: string }>;
-              date?: Date;
-            };
-            flags?: Set<string>;
-            size?: number;
-            source?: Buffer;
-            bodyStructure?: unknown;
-          };
-
-          const attachments = collectAttachments(raw.bodyStructure);
-          const envelope = raw.envelope;
-          const parsed = await parseMailSource(raw.source);
-          const textPreview = buildTextPreview(parsed.text, parsed.html);
-          messages.push({
-            uid: BigInt(raw.uid),
-            messageId: envelope?.messageId,
-            subject: envelope?.subject,
-            fromName: envelope?.from?.[0]?.name,
-            fromEmail: envelope?.from?.[0]?.address,
-            toEmails: envelope?.to?.map((x) => x.address || "").filter(Boolean) || [],
-            ccEmails: envelope?.cc?.map((x) => x.address || "").filter(Boolean) || [],
-            date: envelope?.date,
-            snippet: textPreview.slice(0, 140),
-            textPreview,
-            hasAttachments: attachments.length > 0,
-            attachmentCount: attachments.length,
-            flags: Array.from(raw.flags || []),
-            size: Number(raw.size || 0),
-            attachments,
-          });
+          messages.push(mapEnvelopeToMeta(message as unknown as RawSyncFetchMessage));
         }
         return messages;
       },
@@ -432,55 +435,12 @@ export async function withImapSession<T>(
 
           for await (const message of client.fetch(
             range,
-            {
-              uid: true,
-              envelope: true,
-              flags: true,
-              size: true,
-              bodyStructure: true,
-              source: true,
-            } as never,
+            SYNC_INDEX_FETCH as never,
             { uid: false } as never,
           )) {
-            const raw = message as unknown as {
-              uid: number | bigint;
-              envelope?: {
-                messageId?: string;
-                subject?: string;
-                from?: Array<{ name?: string; address?: string }>;
-                to?: Array<{ address?: string }>;
-                cc?: Array<{ address?: string }>;
-                date?: Date;
-              };
-              flags?: Set<string>;
-              size?: number;
-              source?: Buffer;
-              bodyStructure?: unknown;
-            };
-
-            const attachments = collectAttachments(raw.bodyStructure);
-            const envelope = raw.envelope;
-            const parsed = await parseMailSource(raw.source);
-            const textPreview = buildTextPreview(parsed.text, parsed.html);
-            const uid = BigInt(raw.uid);
-            if (uid > maxUid) maxUid = uid;
-            batch.push({
-              uid,
-              messageId: envelope?.messageId,
-              subject: envelope?.subject,
-              fromName: envelope?.from?.[0]?.name,
-              fromEmail: envelope?.from?.[0]?.address,
-              toEmails: envelope?.to?.map((x) => x.address || "").filter(Boolean) || [],
-              ccEmails: envelope?.cc?.map((x) => x.address || "").filter(Boolean) || [],
-              date: envelope?.date,
-              snippet: textPreview.slice(0, 140),
-              textPreview,
-              hasAttachments: attachments.length > 0,
-              attachmentCount: attachments.length,
-              flags: Array.from(raw.flags || []),
-              size: Number(raw.size || 0),
-              attachments,
-            });
+            const meta = mapEnvelopeToMeta(message as unknown as RawSyncFetchMessage);
+            if (meta.uid > maxUid) maxUid = meta.uid;
+            batch.push(meta);
           }
 
           if (batch.length > 0) {
@@ -746,63 +706,10 @@ async function fetchMessagesInRange(
     const messages: ImapMessageMeta[] = [];
     for await (const message of client.fetch(
       range,
-      {
-        uid: true,
-        envelope: true,
-        flags: true,
-        size: true,
-        bodyStructure: true,
-        source: true,
-      } as never,
+      SYNC_INDEX_FETCH as never,
       { uid: useUid } as never,
     )) {
-      const raw = message as unknown as {
-        uid: number;
-        envelope?: {
-          messageId?: string;
-          subject?: string;
-          from?: Array<{ name?: string; address?: string }>;
-          to?: Array<{ address?: string }>;
-          cc?: Array<{ address?: string }>;
-          date?: Date;
-        };
-        flags?: Set<string>;
-        size?: number;
-        source?: Buffer;
-        bodyStructure?: unknown;
-      };
-
-      const attachments = collectAttachments(raw.bodyStructure);
-      const envelope = raw.envelope as
-        | {
-            messageId?: string;
-            subject?: string;
-            from?: Array<{ name?: string; address?: string }>;
-            to?: Array<{ address?: string }>;
-            cc?: Array<{ address?: string }>;
-            date?: Date;
-          }
-        | undefined;
-
-      const parsed = await parseMailSource(raw.source);
-      const textPreview = buildTextPreview(parsed.text, parsed.html);
-      messages.push({
-        uid: BigInt(raw.uid),
-        messageId: envelope?.messageId,
-        subject: envelope?.subject,
-        fromName: envelope?.from?.[0]?.name,
-        fromEmail: envelope?.from?.[0]?.address,
-        toEmails: envelope?.to?.map((x) => x.address || "").filter(Boolean) || [],
-        ccEmails: envelope?.cc?.map((x) => x.address || "").filter(Boolean) || [],
-        date: envelope?.date,
-        snippet: textPreview.slice(0, 140),
-        textPreview,
-        hasAttachments: attachments.length > 0,
-        attachmentCount: attachments.length,
-        flags: Array.from(raw.flags || []),
-        size: Number(raw.size || 0),
-        attachments,
-      });
+      messages.push(mapEnvelopeToMeta(message as unknown as RawSyncFetchMessage));
     }
 
     return messages;
@@ -922,55 +829,12 @@ export async function fetchFolderMessagesPaged(
 
       for await (const message of client.fetch(
         range,
-        {
-          uid: true,
-          envelope: true,
-          flags: true,
-          size: true,
-          bodyStructure: true,
-          source: true,
-        } as never,
+        SYNC_INDEX_FETCH as never,
         { uid: false } as never,
       )) {
-        const raw = message as unknown as {
-          uid: number | bigint;
-          envelope?: {
-            messageId?: string;
-            subject?: string;
-            from?: Array<{ name?: string; address?: string }>;
-            to?: Array<{ address?: string }>;
-            cc?: Array<{ address?: string }>;
-            date?: Date;
-          };
-          flags?: Set<string>;
-          size?: number;
-          source?: Buffer;
-          bodyStructure?: unknown;
-        };
-
-        const attachments = collectAttachments(raw.bodyStructure);
-        const envelope = raw.envelope;
-        const parsed = await parseMailSource(raw.source);
-        const textPreview = buildTextPreview(parsed.text, parsed.html);
-        const uid = BigInt(raw.uid);
-        if (uid > maxUid) maxUid = uid;
-        batch.push({
-          uid,
-          messageId: envelope?.messageId,
-          subject: envelope?.subject,
-          fromName: envelope?.from?.[0]?.name,
-          fromEmail: envelope?.from?.[0]?.address,
-          toEmails: envelope?.to?.map((x) => x.address || "").filter(Boolean) || [],
-          ccEmails: envelope?.cc?.map((x) => x.address || "").filter(Boolean) || [],
-          date: envelope?.date,
-          snippet: textPreview.slice(0, 140),
-          textPreview,
-          hasAttachments: attachments.length > 0,
-          attachmentCount: attachments.length,
-          flags: Array.from(raw.flags || []),
-          size: Number(raw.size || 0),
-          attachments,
-        });
+        const meta = mapEnvelopeToMeta(message as unknown as RawSyncFetchMessage);
+        if (meta.uid > maxUid) maxUid = meta.uid;
+        batch.push(meta);
       }
 
       if (batch.length > 0) {

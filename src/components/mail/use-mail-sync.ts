@@ -65,9 +65,10 @@ export function useMailSync(s: MailStateReturn) {
     }
   }
 
-  async function loadFolders(accountId: string) {
+  async function loadFolders(accountId: string, options?: { fromImap?: boolean }) {
     if (!accountId) return;
-    const res = await fetch(`/api/accounts/${accountId}/folders`);
+    const qs = options?.fromImap ? "?sync=1" : "";
+    const res = await fetch(`/api/accounts/${accountId}/folders${qs}`);
     if (!res.ok) {
       s.setUiError(await readErrorMessage(res, "Ordner konnten nicht geladen werden."));
       s.setFolders([]);
@@ -85,7 +86,9 @@ export function useMailSync(s: MailStateReturn) {
   }
 
   async function reloadFolders() {
-    if (s.selectedAccountId && !s.isAllAccounts) await loadFolders(s.selectedAccountId);
+    if (s.selectedAccountId && !s.isAllAccounts) {
+      await loadFolders(s.selectedAccountId, { fromImap: true });
+    }
   }
 
   async function loadEmails() {

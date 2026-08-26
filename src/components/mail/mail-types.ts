@@ -179,7 +179,7 @@ export const MOBILE_MAIN_HEADER_LS_KEY = "mailpilot.layout.mobileMainHeaderExpan
 export const FOLDER_COUNT_MODE_LS_KEY = "mailpilot.layout.folderCountMode";
 export const MOBILE_SWIPE_LEFT_ACTION_LS_KEY = "mailpilot.mobileSwipe.leftAction";
 export const MOBILE_SWIPE_RIGHT_ACTION_LS_KEY = "mailpilot.mobileSwipe.rightAction";
-export const FOLDER_REFRESH_INTERVAL_MS = 60 * 1000;
+export const FOLDER_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Cosmetic constants
