@@ -106,6 +106,29 @@ export function useMailSenderActions(
       if (data.matched) {
         s.setSenderPromptVisible(false);
         s.setSenderPromptData(null);
+        const targetFolder = data.profile?.targetFolder as string | undefined;
+        const category = data.profile?.category as string | undefined;
+        // Optimistic: hide from inbox as soon as the user leaves this mail —
+        // don't wait for the slow IMAP move in mark-read.
+        if (
+          email.folderPath === "INBOX" &&
+          targetFolder &&
+          targetFolder !== "INBOX" &&
+          category !== "ignore"
+        ) {
+          if (s.selectedEmailIdRef.current !== email.id) {
+            s.pendingAutoMoveRef.current = null;
+            s.setEmails((prev) => prev.filter((e) => e.id !== email.id));
+            if (s.autoMoveToastTimerRef.current) clearTimeout(s.autoMoveToastTimerRef.current);
+            s.setAutoMoveToast({ emailId: email.id, folder: targetFolder });
+            s.autoMoveToastTimerRef.current = setTimeout(() => {
+              s.setAutoMoveToast(null);
+              s.autoMoveToastTimerRef.current = null;
+            }, 5000);
+          } else {
+            s.pendingAutoMoveRef.current = { emailId: email.id, folder: targetFolder };
+          }
+        }
         return;
       }
       const domain = email.fromEmail.split("@")[1] ?? "";

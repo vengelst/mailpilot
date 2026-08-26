@@ -229,18 +229,32 @@ export function useMailSync(s: MailStateReturn) {
     }
   }
 
+  function showAutoMoveToast(emailId: string, folder: string) {
+    if (s.autoMoveToastTimerRef.current) clearTimeout(s.autoMoveToastTimerRef.current);
+    s.setAutoMoveToast({ emailId, folder });
+    s.autoMoveToastTimerRef.current = setTimeout(() => {
+      s.setAutoMoveToast(null);
+      s.autoMoveToastTimerRef.current = null;
+    }, 5000);
+  }
+
+  /** Remove an auto-moved mail from the current list and show toast. */
+  function applyAutoMoveGone(emailId: string, folder: string) {
+    s.pendingAutoMoveRef.current = null;
+    s.setEmails((prev) => prev.filter((e) => e.id !== emailId));
+    if (s.selectedEmailIdRef.current === emailId) {
+      s.selectedEmailIdRef.current = null;
+      s.setSelectedEmail(null);
+      s.setMobilePane("middle");
+    }
+    showAutoMoveToast(emailId, folder);
+    void reloadFolders();
+  }
+
   async function loadEmail(id: string) {
     if (s.pendingAutoMoveRef.current && s.pendingAutoMoveRef.current.emailId !== id) {
       const { emailId: moveId, folder } = s.pendingAutoMoveRef.current;
-      s.pendingAutoMoveRef.current = null;
-      s.setEmails((prev) => prev.filter((e) => e.id !== moveId));
-      if (s.autoMoveToastTimerRef.current) clearTimeout(s.autoMoveToastTimerRef.current);
-      s.setAutoMoveToast({ emailId: moveId, folder });
-      s.autoMoveToastTimerRef.current = setTimeout(() => {
-        s.setAutoMoveToast(null);
-        s.autoMoveToastTimerRef.current = null;
-      }, 5000);
-      void reloadFolders();
+      applyAutoMoveGone(moveId, folder);
     }
     const requestId = ++s.activeLoadEmailRequestIdRef.current;
     s.setIsLoadingDetail(true);
@@ -257,6 +271,7 @@ export function useMailSync(s: MailStateReturn) {
     if (!res.ok) {
       s.setUiError("E-Mail konnte nicht geladen werden.");
       s.setSelectedEmail(null);
+      s.selectedEmailIdRef.current = null;
       s.setEmailDetailMenuOpen(false);
       s.setIsLoadingDetail(false);
       s.setIsLoadingBody(false);
@@ -266,11 +281,13 @@ export function useMailSync(s: MailStateReturn) {
     if (requestId !== s.activeLoadEmailRequestIdRef.current) return;
     const emailData = data.email ?? null;
     s.setSelectedEmail(emailData);
+    s.selectedEmailIdRef.current = emailData?.id ?? null;
     s.setMobilePane("right");
     s.setIsLoadingDetail(false);
     loadContactCandidates().catch(() => {});
-    await loadBody(id);
-    if (requestId !== s.activeLoadEmailRequestIdRef.current) return;
+
+    // Start mark-read / sender-profile checks immediately — don't wait for body
+    // download, so pendingAutoMove is ready when the user clicks the next mail.
     if (emailData) {
       const unread = !(emailData.flags ?? []).includes("\\Seen");
       const isInInbox = emailData.folderPath === "INBOX";
@@ -280,7 +297,12 @@ export function useMailSync(s: MailStateReturn) {
             if (!res.ok) return;
             const mrData = await res.json().catch(() => ({}));
             if (mrData.movedTo) {
-              s.pendingAutoMoveRef.current = { emailId: id, folder: mrData.movedTo };
+              const folder = mrData.movedTo as string;
+              if (s.selectedEmailIdRef.current !== id) {
+                applyAutoMoveGone(id, folder);
+              } else {
+                s.pendingAutoMoveRef.current = { emailId: id, folder };
+              }
             }
             if (Array.isArray(mrData.labels) && mrData.labels.length > 0) {
               const newLabels = mrData.labels as string[];
@@ -305,9 +327,11 @@ export function useMailSync(s: MailStateReturn) {
           ),
         );
       }
-      // Restore Auto-Prompt: classify unknown senders when opening a mail
       s.onEmailOpenedRef.current?.(emailData);
     }
+
+    await loadBody(id);
+    if (requestId !== s.activeLoadEmailRequestIdRef.current) return;
     return emailData;
   }
 
