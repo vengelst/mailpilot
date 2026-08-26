@@ -59,6 +59,7 @@ export function useMailActions(s: MailStateReturn, sync: MailSyncReturn) {
     checkSenderProfileAfterMove: sender.checkSenderProfileAfterMove,
     handleRememberSenderProfile: sender.handleRememberSenderProfile,
     checkSenderOnOpen: sender.checkSenderOnOpen,
+    openMatchedSenderRuleEditor: sender.openMatchedSenderRuleEditor,
     handleSenderPromptSave: sender.handleSenderPromptSave,
     handleSenderPromptSkip: sender.handleSenderPromptSkip,
     handleSenderPromptIgnore: sender.handleSenderPromptIgnore,

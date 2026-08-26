@@ -8,6 +8,7 @@ import { useMemo } from "react";
 import { buildSafeMailDocument } from "@/lib/sanitizeMailHtml";
 import { linkifyMailPlainText } from "@/lib/linkifyMailPlainText";
 import {
+  folderDisplayName,
   formatDateTimeShort,
   formatDetailDate,
   getAttachmentDisplayName,
@@ -167,15 +168,49 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
         </div>
       </div>
 
-      {/* Sender prompt */}
+      {/* Known sender rule (compact) */}
+      {s.matchedSenderRule && !s.senderPromptVisible ? (
+        <div className="border-b glass-divider px-4 py-2 glass-subtle flex flex-wrap items-center gap-2">
+          <span className="text-xs glass-text-secondary">
+            Regel:{" "}
+            <strong className="glass-text-primary">{s.matchedSenderRule.profileName}</strong>
+            {" · "}
+            {s.matchedSenderRule.category}
+            {s.matchedSenderRule.targetFolder ? (
+              <>
+                {" → "}
+                <strong className="glass-text-primary" title={s.matchedSenderRule.targetFolder}>
+                  {folderDisplayName(s.matchedSenderRule.targetFolder)}
+                </strong>
+              </>
+            ) : s.matchedSenderRule.category === "ignore" ? (
+              <span className="glass-text-muted"> (ignorieren)</span>
+            ) : null}
+          </span>
+          <button
+            type="button"
+            onClick={() => actions.openMatchedSenderRuleEditor()}
+            className="glass-btn rounded-lg px-2.5 py-1 text-xs font-medium"
+          >
+            Regel ändern
+          </button>
+        </div>
+      ) : null}
+
+      {/* Sender prompt (create or edit) */}
       {s.senderPromptVisible && s.senderPromptData ? (
         <div className="border-b glass-divider px-4 py-3 glass-info">
-          <p className="text-sm font-medium glass-text-primary">Absender &quot;{s.senderPromptData.email}&quot; noch nicht klassifiziert</p>
+          <p className="text-sm font-medium glass-text-primary">
+            {s.senderPromptMode === "edit"
+              ? `Regel für "${s.senderPromptData.email}" bearbeiten`
+              : `Absender "${s.senderPromptData.email}" noch nicht klassifiziert`}
+          </p>
           <div className="mt-2 flex flex-wrap items-end gap-3">
             <div>
               <label className="block text-xs glass-text-muted mb-0.5">Kategorie</label>
               <select value={s.senderPromptCategory} onChange={(e) => s.setSenderPromptCategory(e.target.value)} className="glass-select rounded-lg px-2 py-1 text-sm">
                 <option value="Kunde">Kunde</option><option value="Lieferant">Lieferant</option><option value="Subunternehmer">Subunternehmer</option><option value="Privat">Privat</option><option value="Werbung">Werbung</option><option value="Sonstiges">Sonstiges</option>
+                {s.senderPromptMode === "edit" ? <option value="ignore">Ignorieren</option> : null}
               </select>
             </div>
             <div>
@@ -259,9 +294,15 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
               )}
             </div>
             <div className="flex gap-1">
-              <button type="button" onClick={() => void actions.handleSenderPromptSave()} disabled={s.senderPromptSaving} className="glass-btn-primary rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50">{s.senderPromptSaving ? "..." : "Profil speichern"}</button>
-              <button type="button" onClick={actions.handleSenderPromptSkip} className="glass-btn rounded-lg px-3 py-1 text-xs">Überspringen</button>
-              <button type="button" onClick={() => void actions.handleSenderPromptIgnore()} disabled={s.senderPromptSaving} className="glass-btn rounded-lg px-3 py-1 text-xs glass-text-muted disabled:opacity-50">Nie wieder fragen</button>
+              <button type="button" onClick={() => void actions.handleSenderPromptSave()} disabled={s.senderPromptSaving} className="glass-btn-primary rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-50">
+                {s.senderPromptSaving ? "..." : s.senderPromptMode === "edit" ? "Regel speichern" : "Profil speichern"}
+              </button>
+              <button type="button" onClick={actions.handleSenderPromptSkip} className="glass-btn rounded-lg px-3 py-1 text-xs">
+                {s.senderPromptMode === "edit" ? "Abbrechen" : "Überspringen"}
+              </button>
+              {s.senderPromptMode === "create" ? (
+                <button type="button" onClick={() => void actions.handleSenderPromptIgnore()} disabled={s.senderPromptSaving} className="glass-btn rounded-lg px-3 py-1 text-xs glass-text-muted disabled:opacity-50">Nie wieder fragen</button>
+              ) : null}
             </div>
           </div>
           <div className="mt-2">

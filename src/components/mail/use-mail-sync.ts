@@ -256,6 +256,7 @@ export function useMailSync(s: MailStateReturn) {
       const { emailId: moveId, folder } = s.pendingAutoMoveRef.current;
       applyAutoMoveGone(moveId, folder);
     }
+    s.setMatchedSenderRule(null);
     const requestId = ++s.activeLoadEmailRequestIdRef.current;
     s.setIsLoadingDetail(true);
     s.setEmailDetailMenuOpen(false);

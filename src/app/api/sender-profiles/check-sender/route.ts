@@ -21,9 +21,13 @@ export async function GET(req: NextRequest) {
     return ok({
       matched: true,
       profile: {
+        id: matched.id,
         profileName: matched.profileName,
         category: matched.category,
         targetFolder: matched.targetFolder,
+        autoLabels: matched.autoLabels ?? [],
+        patterns: matched.patterns ?? [],
+        isActive: matched.isActive,
       },
     });
   }

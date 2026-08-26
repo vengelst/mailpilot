@@ -152,7 +152,17 @@ export function useMailState() {
 
   // --- Auto-Prompt (sender classification) ---
   const [checkedSenders] = useState(() => new Set<string>());
+  const [matchedSenderRule, setMatchedSenderRule] = useState<{
+    profileId: string;
+    profileName: string;
+    category: string;
+    targetFolder: string;
+    autoLabels: string[];
+    fromEmail: string;
+  } | null>(null);
   const [senderPromptVisible, setSenderPromptVisible] = useState(false);
+  const [senderPromptMode, setSenderPromptMode] = useState<"create" | "edit">("create");
+  const [senderPromptProfileId, setSenderPromptProfileId] = useState<string | null>(null);
   const [senderPromptData, setSenderPromptData] = useState<{
     email: string;
     domain: string;
@@ -419,7 +429,10 @@ export function useMailState() {
 
     // Auto-Prompt
     checkedSenders,
+    matchedSenderRule, setMatchedSenderRule,
     senderPromptVisible, setSenderPromptVisible,
+    senderPromptMode, setSenderPromptMode,
+    senderPromptProfileId, setSenderPromptProfileId,
     senderPromptData, setSenderPromptData,
     senderPromptCategory, setSenderPromptCategory,
     senderPromptFolder, setSenderPromptFolder,
