@@ -75,6 +75,21 @@ export function MailDetail({ s, actions, sync, openMobilePane }: Props) {
           <p className="text-sm tabular-nums font-medium glass-text-primary">{formatDateTimeShort(email.date ?? email.createdAt)}</p>
         </div>
 
+        <button
+          type="button"
+          onClick={() => void actions.runAction(`/api/emails/${email.id}/move`, { targetSpecial: "trash" })}
+          className="glass-btn flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+          aria-label="In den Papierkorb"
+          title="Papierkorb"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden>
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <line x1="10" y1="11" x2="10" y2="17" />
+            <line x1="14" y1="11" x2="14" y2="17" />
+          </svg>
+        </button>
+
         {/* Desktop dropdown menu */}
         <div className="relative hidden shrink-0 lg:block" data-email-detail-menu-root>
           <button type="button" onClick={(e) => { e.stopPropagation(); s.setEmailDetailMenuOpen((v) => !v); }} aria-label="Mail-Details und Befehle" aria-expanded={s.emailDetailMenuOpen} aria-haspopup="menu" className="glass-btn flex h-10 w-10 items-center justify-center rounded-lg">
