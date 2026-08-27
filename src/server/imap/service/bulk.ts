@@ -94,10 +94,12 @@ export async function runBulkEmailAction(input: {
         const failedUids = new Set(moveResult.failed.map((f) => f.uid));
 
         const movedRows = rows.filter((r) => !failedUids.has(r.imapUid));
+        // Bulk MOVE has no per-message UIDPLUS map; UIDs are per-mailbox and
+        // must not be carried into the target folder (unique constraint).
+        // Drop source index rows — next sync re-indexes in the target.
         if (movedRows.length > 0) {
-          await prisma.emailIndex.updateMany({
+          await prisma.emailIndex.deleteMany({
             where: { id: { in: movedRows.map((r) => r.id) } },
-            data: { folderPath: targetPath },
           });
         }
 
@@ -143,10 +145,10 @@ export async function runBulkEmailAction(input: {
         const failedUids = new Set(moveResult.failed.map((f) => f.uid));
 
         const movedRows = rows.filter((r) => !failedUids.has(r.imapUid));
+        // Same as trash/spam: no destination UIDs from bulk MOVE → delete source index.
         if (movedRows.length > 0) {
-          await prisma.emailIndex.updateMany({
+          await prisma.emailIndex.deleteMany({
             where: { id: { in: movedRows.map((r) => r.id) } },
-            data: { folderPath: input.targetFolder! },
           });
         }
 

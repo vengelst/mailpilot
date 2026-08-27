@@ -293,48 +293,80 @@ export async function syncFolderEmailsIncremental(
 
       // Fetch only messages newer than our last checkpoint (UID > lastSeenUid)
       const lastSeenUid = folderRow.lastSeenUid;
+      let flagsUpdated = 0;
+      let removedFromIndex = 0;
+
+      // Empty mailbox: wipe local index (existsCount alone can drift to 0
+      // without removing rows, leaving stale spam/inbox counts in the UI).
+      if (status.exists === 0) {
+        const deleted = await prisma.emailIndex.deleteMany({
+          where: { accountId, folderPath },
+        });
+        removedFromIndex = deleted.count;
+        await prisma.mailFolder.update({
+          where: { id: folderRow.id },
+          data: {
+            uidValidity: status.uidValidity,
+            lastSyncedAt: new Date(),
+            existsCount: 0,
+          },
+        });
+        return {
+          accountId,
+          folderPath,
+          mode: "incremental" as const,
+          synced: 0,
+          emailIds: [] as string[],
+          newMails: 0,
+          flagsUpdated: 0,
+          removedFromIndex,
+          uidValidityChanged: false,
+          oldUidValidity: bigIntToString(storedUidValidity),
+          newUidValidity: bigIntToString(status.uidValidity),
+          lastSeenUid: lastSeenUid.toString(),
+        };
+      }
+
       let newMessages: ImapMessageMeta[] = [];
-      if (status.exists > 0) {
-        const nextUid = lastSeenUid + BIG_ONE;
-        const range = `${nextUid.toString()}:*`;
-        newMessages = await session.fetchNewMessages(range);
-        // IMAP "UID:*" may include lastSeenUid itself if no newer messages exist — filter it
-        if (lastSeenUid > BIG_ZERO) {
-          newMessages = newMessages.filter((m) => m.uid > lastSeenUid);
-        }
+      const nextUid = lastSeenUid + BIG_ONE;
+      const range = `${nextUid.toString()}:*`;
+      newMessages = await session.fetchNewMessages(range);
+      // IMAP "UID:*" may include lastSeenUid itself if no newer messages exist — filter it
+      if (lastSeenUid > BIG_ZERO) {
+        newMessages = newMessages.filter((m) => m.uid > lastSeenUid);
       }
       const newEmailIds = await upsertFetchedMessages(accountId, folderPath, newMessages);
 
       // --- Flag / index reconcile (expensive: O(folder size)) ---
       // Skip when the mailbox size is unchanged and there are no new UIDs —
       // that covers the common idle Fast-Sync case. Reconcile when EXISTS
-      // dropped (deletes/moves) or drifted without new UIDs.
-      let flagsUpdated = 0;
-      let removedFromIndex = 0;
+      // dropped (deletes/moves), drifted without new UIDs, or local index
+      // count disagrees with IMAP EXISTS.
       const storedExists = folderRow.existsCount ?? 0;
       const existsDropped = status.exists < storedExists;
       const unexplainedDrift =
         newMessages.length === 0 && status.exists !== storedExists;
+      const indexedCount = await prisma.emailIndex.count({
+        where: { accountId, folderPath },
+      });
+      const indexDrift = indexedCount !== status.exists;
       const needsFullFlagReconcile =
-        lastSeenUid > BIG_ZERO && (existsDropped || unexplainedDrift);
+        lastSeenUid > BIG_ZERO &&
+        (existsDropped || unexplainedDrift || indexDrift);
 
       if (needsFullFlagReconcile) {
-        // Fetch current flag state from IMAP for all UIDs up to lastSeenUid
-        const flagRange = `1:${lastSeenUid.toString()}`;
-        const flagSnapshots =
-          status.exists > 0
-            ? await session.fetchFlags(flagRange)
-            : [];
-        const serverUids = new Set<bigint>(flagSnapshots.map((entry) => entry.uid));
-
         const indexedRows = await prisma.emailIndex.findMany({
-          where: {
-            accountId,
-            folderPath,
-            imapUid: { lte: lastSeenUid },
-          },
+          where: { accountId, folderPath },
           select: { id: true, imapUid: true, flags: true },
         });
+        let maxIndexedUid = lastSeenUid;
+        for (const row of indexedRows) {
+          if (row.imapUid > maxIndexedUid) maxIndexedUid = row.imapUid;
+        }
+        const flagRange = `1:${maxIndexedUid.toString()}`;
+        const flagSnapshots = await session.fetchFlags(flagRange);
+        const serverUids = new Set<bigint>(flagSnapshots.map((entry) => entry.uid));
+
         const indexedByUid = new Map<bigint, (typeof indexedRows)[number]>(
           indexedRows.map((row) => [row.imapUid, row]),
         );

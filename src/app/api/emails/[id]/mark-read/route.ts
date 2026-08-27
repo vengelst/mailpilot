@@ -2,6 +2,7 @@ import { getSessionFromCookies } from "@/server/auth/session";
 import { fail, ok } from "@/lib/http";
 import { markEmailSeen } from "@/server/imap/imapService";
 import { moveIndexedEmail } from "@/server/imap/imapService";
+import { applyEmailIndexFolderMove } from "@/server/imap/service/applyEmailIndexMove";
 import { prisma } from "@/server/db/prisma";
 import { writeAuditLog } from "@/server/audit/auditLog";
 import { matchesSenderProfile } from "@/server/rules/senderMatcher";
@@ -68,14 +69,12 @@ export async function POST(
               ? [...new Set([...(email.labels ?? []), ...matchedProfile.autoLabels])]
               : email.labels ?? [];
 
-          await prisma.emailIndex.update({
-            where: { id },
-            data: {
-              folderPath: matchedProfile.targetFolder,
-              ...(newUid ? { imapUid: newUid } : {}),
-              ...(labelsAdded.length > 0 ? { labels: mergedLabels } : {}),
-            },
-          });
+          await applyEmailIndexFolderMove(
+            email,
+            matchedProfile.targetFolder,
+            newUid,
+            labelsAdded.length > 0 ? { labels: mergedLabels } : undefined,
+          );
           return ok({
             ok: true,
             movedTo: matchedProfile.targetFolder,

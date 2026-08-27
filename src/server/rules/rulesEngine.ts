@@ -15,6 +15,7 @@ import { prisma } from "@/server/db/prisma";
 import { BlockedSenderAction } from "@prisma/client";
 import { writeAuditLog } from "@/server/audit/auditLog";
 import { moveIndexedEmail, moveIndexedEmailToSpecial } from "@/server/imap/imapService";
+import { applyEmailIndexFolderMove } from "@/server/imap/service/applyEmailIndexMove";
 import { runAiClassificationForEmail } from "@/server/automation/aiClassificationJob";
 import {
   RuleAction,
@@ -142,17 +143,23 @@ export function evaluateRuleCondition(
  */
 async function applyBlockedSenderAction(
   userId: string,
-  email: { id: string; accountId: string; folderPath: string },
+  email: {
+    id: string;
+    accountId: string;
+    folderPath: string;
+    imapUid: bigint;
+    messageId: string | null;
+  },
   action: BlockedSenderAction,
 ) {
   if (action === "move_spam") {
     const { path: targetFolder, newUid } = await moveIndexedEmailToSpecial(email.id, userId, "spam");
-    await prisma.emailIndex.update({ where: { id: email.id }, data: { folderPath: targetFolder, ...(newUid ? { imapUid: newUid } : {}) } });
+    await applyEmailIndexFolderMove(email, targetFolder, newUid);
     return { action, targetFolder };
   }
   if (action === "move_trash") {
     const { path: targetFolder, newUid } = await moveIndexedEmailToSpecial(email.id, userId, "trash");
-    await prisma.emailIndex.update({ where: { id: email.id }, data: { folderPath: targetFolder, ...(newUid ? { imapUid: newUid } : {}) } });
+    await applyEmailIndexFolderMove(email, targetFolder, newUid);
     return { action, targetFolder };
   }
   if (action === "mark_newsletter") {
@@ -182,6 +189,8 @@ export async function applyBlockedSenderPoliciesForEmail(ctx: { userId: string; 
       id: true,
       accountId: true,
       folderPath: true,
+      imapUid: true,
+      messageId: true,
       fromEmail: true,
     },
   });
@@ -261,29 +270,53 @@ async function applyRuleAction(action: RuleAction, userId: string, emailId: stri
   }
 
   if (action.type === "move_folder") {
-    const newUid = await moveIndexedEmail(emailId, userId, action.value);
-    await prisma.emailIndex.update({
+    const email = await prisma.emailIndex.findUnique({
       where: { id: emailId },
-      data: { folderPath: action.value, ...(newUid ? { imapUid: newUid } : {}) },
+      select: {
+        id: true,
+        accountId: true,
+        folderPath: true,
+        imapUid: true,
+        messageId: true,
+      },
     });
+    if (!email) throw new Error("Email not found");
+    const newUid = await moveIndexedEmail(emailId, userId, action.value);
+    await applyEmailIndexFolderMove(email, action.value, newUid);
     return { type: action.type, targetFolder: action.value };
   }
 
   if (action.type === "move_spam") {
-    const { path: targetFolder, newUid } = await moveIndexedEmailToSpecial(emailId, userId, "spam");
-    await prisma.emailIndex.update({
+    const email = await prisma.emailIndex.findUnique({
       where: { id: emailId },
-      data: { folderPath: targetFolder, ...(newUid ? { imapUid: newUid } : {}) },
+      select: {
+        id: true,
+        accountId: true,
+        folderPath: true,
+        imapUid: true,
+        messageId: true,
+      },
     });
+    if (!email) throw new Error("Email not found");
+    const { path: targetFolder, newUid } = await moveIndexedEmailToSpecial(emailId, userId, "spam");
+    await applyEmailIndexFolderMove(email, targetFolder, newUid);
     return { type: action.type, targetFolder };
   }
 
   if (action.type === "move_trash") {
-    const { path: targetFolder, newUid } = await moveIndexedEmailToSpecial(emailId, userId, "trash");
-    await prisma.emailIndex.update({
+    const email = await prisma.emailIndex.findUnique({
       where: { id: emailId },
-      data: { folderPath: targetFolder, ...(newUid ? { imapUid: newUid } : {}) },
+      select: {
+        id: true,
+        accountId: true,
+        folderPath: true,
+        imapUid: true,
+        messageId: true,
+      },
     });
+    if (!email) throw new Error("Email not found");
+    const { path: targetFolder, newUid } = await moveIndexedEmailToSpecial(emailId, userId, "trash");
+    await applyEmailIndexFolderMove(email, targetFolder, newUid);
     return { type: action.type, targetFolder };
   }
 

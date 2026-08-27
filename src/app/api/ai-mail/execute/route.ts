@@ -11,6 +11,7 @@ import {
   moveIndexedEmailToSpecial,
   syncFolders,
 } from "@/server/imap/imapService";
+import { applyEmailIndexFolderMove } from "@/server/imap/service/applyEmailIndexMove";
 import { runAiClassificationForEmail } from "@/server/automation/aiClassificationJob";
 
 const schema = z.object({
@@ -53,7 +54,13 @@ export async function POST(req: NextRequest) {
         accountId,
         account: { userId: session.userId },
       },
-      select: { id: true, folderPath: true },
+      select: {
+        id: true,
+        accountId: true,
+        folderPath: true,
+        imapUid: true,
+        messageId: true,
+      },
     });
     const ownedById = new Map(ownedEmails.map((e) => [e.id, e]));
 
@@ -103,25 +110,16 @@ export async function POST(req: NextRequest) {
             });
             continue;
           }
-          await moveIndexedEmail(action.emailId, session.userId, action.targetFolder);
-          await prisma.emailIndex.update({
-            where: { id: action.emailId },
-            data: { folderPath: action.targetFolder },
-          });
+          const newUid = await moveIndexedEmail(action.emailId, session.userId, action.targetFolder);
+          await applyEmailIndexFolderMove(owned, action.targetFolder, newUid);
           outcomes.push({ index: i, type: action.type, emailId: action.emailId, status: "executed" });
         } else if (action.type === "move_trash") {
           const { path: target, newUid } = await moveIndexedEmailToSpecial(action.emailId, session.userId, "trash");
-          await prisma.emailIndex.update({
-            where: { id: action.emailId },
-            data: { folderPath: target, ...(newUid ? { imapUid: newUid } : {}) },
-          });
+          await applyEmailIndexFolderMove(owned, target, newUid);
           outcomes.push({ index: i, type: action.type, emailId: action.emailId, status: "executed" });
         } else if (action.type === "move_spam") {
           const { path: target, newUid } = await moveIndexedEmailToSpecial(action.emailId, session.userId, "spam");
-          await prisma.emailIndex.update({
-            where: { id: action.emailId },
-            data: { folderPath: target, ...(newUid ? { imapUid: newUid } : {}) },
-          });
+          await applyEmailIndexFolderMove(owned, target, newUid);
           outcomes.push({ index: i, type: action.type, emailId: action.emailId, status: "executed" });
         } else if (action.type === "mark_read") {
           await markEmailSeen(action.emailId, session.userId, true);

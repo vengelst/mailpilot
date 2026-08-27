@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionFromCookies } from "@/server/auth/session";
 import { fail, ok } from "@/lib/http";
 import { moveIndexedEmail, moveIndexedEmailToSpecial } from "@/server/imap/imapService";
+import { applyEmailIndexFolderMove } from "@/server/imap/service/applyEmailIndexMove";
 import { prisma } from "@/server/db/prisma";
 import { writeAuditLog } from "@/server/audit/auditLog";
 
@@ -47,15 +48,12 @@ export async function POST(
     }
 
     if (!targetFolder) return fail("No target folder resolved", 400);
-    await prisma.emailIndex.update({
-      where: { id },
-      data: { folderPath: targetFolder, ...(newUid ? { imapUid: newUid } : {}) },
-    });
+    const moved = await applyEmailIndexFolderMove(before, targetFolder, newUid);
 
     await writeAuditLog({
       userId: session.userId,
       accountId: before.accountId,
-      emailId: id,
+      emailId: moved.keptId ?? id,
       action: payload.targetSpecial ? `email.moved_${payload.targetSpecial}` : "email.moved",
       actor: "user",
       beforeJson: { folderPath: before.folderPath },

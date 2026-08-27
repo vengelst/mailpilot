@@ -9,6 +9,7 @@
 
 import { prisma } from "@/server/db/prisma";
 import { moveIndexedEmailToSpecial } from "@/server/imap/imapService";
+import { applyEmailIndexFolderMove } from "@/server/imap/service/applyEmailIndexMove";
 
 /** Represents a single spam signal with a human-readable reason and numeric weight. */
 type SpamSignal = {
@@ -222,7 +223,10 @@ export async function runSpamCheckJob(input: {
     },
     select: {
       id: true,
+      accountId: true,
       folderPath: true,
+      imapUid: true,
+      messageId: true,
       subject: true,
       textPreview: true,
       snippet: true,
@@ -264,23 +268,18 @@ export async function runSpamCheckJob(input: {
 
     try {
       const { path: targetFolder, newUid } = await moveIndexedEmailToSpecial(email.id, input.userId, "spam");
-      await prisma.emailIndex.update({
-        where: { id: email.id },
-        data: {
-          folderPath: targetFolder,
-          ...(newUid ? { imapUid: newUid } : {}),
-          aiCategory: "spam",
-          aiPriority: "high",
-          actionRequired: false,
-          aiSummaryShort:
-            email.aiCategory === "spam"
-              ? undefined
-              : `Spam-Check: automatisch als Spam eingestuft (Score ${finalScore}).`,
-          aiSummaryLong:
-            signals.length > 0
-              ? `Erkannte Signale: ${signals.map((s) => s.reason).join(", ")}`
-              : undefined,
-        },
+      await applyEmailIndexFolderMove(email, targetFolder, newUid, {
+        aiCategory: "spam",
+        aiPriority: "high",
+        actionRequired: false,
+        aiSummaryShort:
+          email.aiCategory === "spam"
+            ? undefined
+            : `Spam-Check: automatisch als Spam eingestuft (Score ${finalScore}).`,
+        aiSummaryLong:
+          signals.length > 0
+            ? `Erkannte Signale: ${signals.map((s) => s.reason).join(", ")}`
+            : undefined,
       });
       moved += 1;
     } catch {
